@@ -18,8 +18,12 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "dma.h"
 #include "i2c.h"
+#include "stm32f1xx_hal.h"
+#include "stm32f1xx_hal_uart.h"
 #include "tim.h"
+#include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -27,6 +31,7 @@
 #include "oled.h"
 #include "font.h"
 #include <stdio.h>
+#include <string.h>
 #include <sys/_intsup.h>
 /* USER CODE END Includes */
 
@@ -41,6 +46,7 @@
 #define TIM4_FREQUENCY_Hz 50
 #define TIM4_AUTO_RELOADED_PERIOD 2000
 #define TIM3_PERIOD_us 10
+#define COOLING_TIME_us 7500
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -152,6 +158,14 @@ void print_auto_OLED(float distance, float angle) {
   OLED_PrintString(0, 16, print_msg_angle, &font16x16, OLED_COLOR_NORMAL);
   OLED_ShowFrame();
 }
+
+
+/*将距离和角度通过蓝牙发送至电脑*/
+void send_auto_bluetooth(float distance, float angle) {
+  static char sendbuffer[50] = "";
+  sprintf(sendbuffer, "d=%f, a=%f", distance, angle);
+  HAL_UART_Transmit_DMA(&huart3, (uint8_t*)sendbuffer, strlen(sendbuffer));
+}
 /* USER CODE END 0 */
 
 /**
@@ -183,10 +197,12 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_I2C1_Init();
   MX_TIM4_Init();
   MX_TIM1_Init();
   MX_TIM3_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   // 初始化OLED
   HAL_Delay(20);
@@ -221,6 +237,8 @@ int main(void)
         counter_tim3 = 0;
         counter_tim3_AC_signal = 0;
         StateMachine = TRIG_UP_AND_DOWN;
+        set_PWM_compare(50);
+        HAL_Delay(500);
         break;
 
       case TRIG_UP_AND_DOWN:
@@ -245,13 +263,16 @@ int main(void)
       case ROTATE:
         set_PWM_compare(compare_tim4);
         compare_tim4 = change_compare_tim4();
+        counter_tim3 = 0;
+        counter_tim3_AC_signal = 0;
         StateMachine = COOLING;
         break;
 
       case COOLING:
         if (counter_tim3 != 0 && counter_tim3_AC_signal == 0) break;
-        // 让TIM3计时100000us
-        counter_tim3 = 100000/TIM3_PERIOD_us;
+        // 冷却
+        send_auto_bluetooth(distance, angle);
+        counter_tim3 = COOLING_TIME_us/TIM3_PERIOD_us;
         counter_tim3_AC_signal = 0;
         break;
         // call: 04
@@ -264,6 +285,7 @@ int main(void)
         StateMachine = MEASURING;
         //call: 02
     }
+
     // callback: 04
     if (StateMachine == COOLING && counter_tim3_AC_signal == 1) {
       StateMachine = TRIG_UP_AND_DOWN;
