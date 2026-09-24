@@ -43,10 +43,9 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define SPEED_OF_SOUND_m_s 340.0
-#define TIM4_FREQUENCY_Hz 50
-#define TIM4_AUTO_RELOADED_PERIOD 2000
 #define TIM3_PERIOD_us 10
 #define COOLING_TIME_us 10000
+#define RADAR_PWM_STEP_ms 0.05f
 
 #define KEY1_IS_PRESSED() (HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_RESET)
 /* USER CODE END PD */
@@ -129,21 +128,23 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
 
 /*根据TIM1捕获计算距离*/
 float calc_distance_cm(int up_edge_number, int down_edge_number) {
-  return (((float)down_edge_number - (float)up_edge_number) * SPEED_OF_SOUND_m_s / 10000 / 2);
+  return (((float)down_edge_number - (float)up_edge_number) * (float)SPEED_OF_SOUND_m_s / 10000 / 2);
 }
 
 /*自动计算TIM4的下一个compare值*/
 int change_compare_tim4(void) {
   if (valid_level_duration_tim4_up_signal == 1) {
-    valid_level_duration_tim4 += 0.05f;
+    valid_level_duration_tim4 += RADAR_PWM_STEP_ms;
   } else {
-    valid_level_duration_tim4 -= 0.05f;
+    valid_level_duration_tim4 -= RADAR_PWM_STEP_ms;
   }
 
   if (valid_level_duration_tim4 >= 2.5f) {
+    valid_level_duration_tim4 = 2.5f;
     valid_level_duration_tim4_up_signal = 0;
   }
   if (valid_level_duration_tim4 <= 0.5f) {
+    valid_level_duration_tim4 = 0.5f;
     valid_level_duration_tim4_up_signal = 1;
   }
 
@@ -283,13 +284,16 @@ int main(void)
           }
         }
 
-        if (counter_tim3 != 0 && counter_tim3_AC_signal == 0) break;
+        // 正在计数
+        if (counter_tim3 != 0) break;
 
-        set_trig_pin(GPIO_PIN_SET);
-        // 让TIM3计时50us
-        counter_tim3 = 50/TIM3_PERIOD_us;
-        counter_tim3_AC_signal = 0;
-        // call: 01
+        // 刚进入此状态
+        if (counter_tim3_AC_signal == 0) {
+          set_trig_pin(GPIO_PIN_SET);
+          // 让TIM3计时50us
+          counter_tim3 = 50/TIM3_PERIOD_us;
+          // call: 01
+        }
         break;
 
       case MEASURING:
@@ -311,11 +315,14 @@ int main(void)
         break;
 
       case COOLING:
-        if (counter_tim3 != 0 && counter_tim3_AC_signal == 0) break;
-        // 冷却
-        send_auto_bluetooth(distance, angle);
-        counter_tim3 = COOLING_TIME_us/TIM3_PERIOD_us;
-        counter_tim3_AC_signal = 0;
+        // 正在计数
+        if (counter_tim3 != 0) break;
+
+        // 刚进入COOLING
+        if (counter_tim3_AC_signal == 0) {
+          send_auto_bluetooth(distance, angle);
+          counter_tim3 = COOLING_TIME_us / TIM3_PERIOD_us;
+        }
         break;
         // call: 04
     }
@@ -324,12 +331,14 @@ int main(void)
     if (StateMachine == TRIG_UP_AND_DOWN && counter_tim3_AC_signal == 1) {
         set_trig_pin(GPIO_PIN_RESET);
         __HAL_TIM_SET_COUNTER(&htim1, 0); // 将TIM1清零，防止测量时自动重装载
+        counter_tim3_AC_signal = 0;
         StateMachine = MEASURING;
         //call: 02
     }
 
     // callback: 04
     if (StateMachine == COOLING && counter_tim3_AC_signal == 1) {
+      counter_tim3_AC_signal = 0;
       StateMachine = TRIG_UP_AND_DOWN;
     }
     /* USER CODE END WHILE */
