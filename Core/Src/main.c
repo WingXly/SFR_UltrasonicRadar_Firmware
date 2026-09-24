@@ -21,7 +21,7 @@
 #include "dma.h"
 #include "i2c.h"
 #include "stm32f1xx_hal.h"
-#include "stm32f1xx_hal_uart.h"
+#include "stm32f1xx_hal_gpio.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
@@ -46,7 +46,9 @@
 #define TIM4_FREQUENCY_Hz 50
 #define TIM4_AUTO_RELOADED_PERIOD 2000
 #define TIM3_PERIOD_us 10
-#define COOLING_TIME_us 7500
+#define COOLING_TIME_us 10000
+
+#define KEY1_IS_PRESSED() (HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_RESET)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -59,6 +61,7 @@
 /* USER CODE BEGIN PV */
 // 状态机
 volatile StateMachine_sample StateMachine = IDEL; 
+int PauseFlag = 1;                           // 暂停标志位
 
 // 用于TIM3计时器的变量
 volatile int counter_tim3 = 0;               // 剩余时间（us）
@@ -151,10 +154,10 @@ int change_compare_tim4(void) {
 void print_auto_OLED(float distance, float angle) {
   OLED_NewFrame();
   char print_msg_distance[20] = "";
-  sprintf(print_msg_distance, "d = %f", distance);
+  sprintf(print_msg_distance, "d = %.2f", distance);
   OLED_PrintString(0, 0, print_msg_distance, &font16x16, OLED_COLOR_NORMAL);
   char print_msg_angle[20] = "";
-  sprintf(print_msg_angle, "a = %f", angle);
+  sprintf(print_msg_angle, "a = %.2f", angle);
   OLED_PrintString(0, 16, print_msg_angle, &font16x16, OLED_COLOR_NORMAL);
   OLED_ShowFrame();
 }
@@ -163,8 +166,17 @@ void print_auto_OLED(float distance, float angle) {
 /*将距离和角度通过蓝牙发送至电脑*/
 void send_auto_bluetooth(float distance, float angle) {
   static char sendbuffer[50] = "";
-  sprintf(sendbuffer, "d=%f, a=%f", distance, angle);
+  sprintf(sendbuffer, "d=%.2f,a=%.2f", distance, angle);
   HAL_UART_Transmit_DMA(&huart3, (uint8_t*)sendbuffer, strlen(sendbuffer));
+}
+
+
+/*控制小灯亮灭*/
+void green_LED(GPIO_PinState state) {
+  HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, state);
+}
+void red_LED(GPIO_PinState state) {
+  HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin, state);
 }
 /* USER CODE END 0 */
 
@@ -230,19 +242,49 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    // event: 暂停确认
+    if (KEY1_IS_PRESSED() && PauseFlag == 0) {
+      HAL_Delay(10);
+      if (KEY1_IS_PRESSED()) {
+        red_LED(GPIO_PIN_SET);
+        green_LED(GPIO_PIN_RESET);
+        PauseFlag = 1;
+      }
+      while (KEY1_IS_PRESSED());
+    }
+
     // 遍历状态机
     switch (StateMachine) {
       case IDEL:
         set_trig_pin(GPIO_PIN_RESET);
+        green_LED(GPIO_PIN_RESET);
+        red_LED(GPIO_PIN_SET);
+        PauseFlag = 1;
+
         counter_tim3 = 0;
         counter_tim3_AC_signal = 0;
-        StateMachine = TRIG_UP_AND_DOWN;
+
         set_PWM_compare(50);
+        StateMachine = TRIG_UP_AND_DOWN;
         HAL_Delay(500);
         break;
 
       case TRIG_UP_AND_DOWN:
+        //event: 暂停取消
+        while (PauseFlag == 1) {
+          if (KEY1_IS_PRESSED()) {
+              HAL_Delay(10);
+              if (KEY1_IS_PRESSED()) {
+                red_LED(GPIO_PIN_RESET);
+                green_LED(GPIO_PIN_SET);
+                PauseFlag = 0;
+              }
+              while (KEY1_IS_PRESSED());
+          }
+        }
+
         if (counter_tim3 != 0 && counter_tim3_AC_signal == 0) break;
+
         set_trig_pin(GPIO_PIN_SET);
         // 让TIM3计时50us
         counter_tim3 = 50/TIM3_PERIOD_us;
