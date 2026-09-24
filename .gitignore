@@ -1,0 +1,11 @@
+build
+mx.scratch
+!.settings
+.vscode
+.settings
+cmake
+.clangd
+.mxproject
+startup_stm32f103xb.s
+STM32F103xx_FLASH.ld
+Drivers
