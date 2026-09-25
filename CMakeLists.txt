@@ -48,6 +48,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/font.c
     Core/Inc/oled.h
     Core/Src/oled.c
+    Core/Src/led.c
+    Core/Inc/led.h
     # Add user sources here
 )
 

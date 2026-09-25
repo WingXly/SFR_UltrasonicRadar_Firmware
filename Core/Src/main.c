@@ -26,10 +26,10 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "led.h"
 #include "oled.h"
 #include "font.h"
 #include <stdio.h>
-#include <string.h>
 #include <sys/_intsup.h>
 /* USER CODE END Includes */
 
@@ -57,8 +57,8 @@
 
 /* USER CODE BEGIN PV */
 // 状态机
-volatile StateMachine_sample StateMachine = IDEL; 
-int PauseFlag = 1;                           // 暂停标志位
+volatile static StateMachine_sample StateMachine = IDEL; 
+static int PauseFlag = 1;                    // 暂停标志位
 
 // 用于TIM3计时器的变量
 volatile int counter_tim3 = 0;               // 剩余时间（us）
@@ -71,6 +71,10 @@ volatile int down_edge_tim1 = 0;             // 下降沿所对应的计数器�
 // 用于TIM4的PWM控制的变量
 float valid_level_duration_tim4 = 0.5;       // PWM有效电平时间(ms)
 int valid_level_duration_tim4_up_signal = 1; // PWM有效电平时间(ms)的上升标志位
+
+// LED小灯。main函数里赋值
+LED * LED_RED = NULL;
+LED * LED_GREEN = NULL;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -162,21 +166,12 @@ void print_auto_OLED(float distance, float angle) {
 }
 
 
-/*将距离和角度通过蓝牙发送至电脑*/
+/*将距离和角度通过串口发送至电脑*/
 void send_auto_bluetooth(float distance, float angle) {
   static char sendbuffer[50] = "";
   uint16_t len = sprintf(sendbuffer, "d=%.2f,a=%.2f\r\n", distance, angle);
   if (huart2.gState != HAL_UART_STATE_READY) return;
   HAL_UART_Transmit_DMA(&huart2, (uint8_t*)sendbuffer, len);
-}
-
-
-/*控制小灯亮灭*/
-void green_LED(GPIO_PinState state) {
-  HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, state);
-}
-void red_LED(GPIO_PinState state) {
-  HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin, state);
 }
 /* USER CODE END 0 */
 
@@ -237,6 +232,10 @@ int main(void)
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
   int compare_tim4 = 0;
   float angle = 0;
+
+  // LED小灯
+  LED_RED = LED_obj_init(LED_RED_GPIO_Port, LED_RED_Pin);
+  LED_GREEN = LED_obj_init(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -247,8 +246,8 @@ int main(void)
     if (KEY1_IS_PRESSED() && PauseFlag == 0) {
       HAL_Delay(10);
       if (KEY1_IS_PRESSED()) {
-        red_LED(GPIO_PIN_SET);
-        green_LED(GPIO_PIN_RESET);
+        LED_off(LED_GREEN);
+        LED_on(LED_RED);
         PauseFlag = 1;
       }
       while (KEY1_IS_PRESSED());
@@ -258,8 +257,8 @@ int main(void)
     switch (StateMachine) {
       case IDEL:
         set_trig_pin(GPIO_PIN_RESET);
-        green_LED(GPIO_PIN_RESET);
-        red_LED(GPIO_PIN_SET);
+        LED_off(LED_GREEN);
+        LED_on(LED_RED);
         PauseFlag = 1;
 
         counter_tim3 = 0;
@@ -276,8 +275,8 @@ int main(void)
           if (KEY1_IS_PRESSED()) {
               HAL_Delay(10);
               if (KEY1_IS_PRESSED()) {
-                red_LED(GPIO_PIN_RESET);
-                green_LED(GPIO_PIN_SET);
+                LED_on(LED_GREEN);
+                LED_off(LED_RED);
                 PauseFlag = 0;
               }
               while (KEY1_IS_PRESSED());
