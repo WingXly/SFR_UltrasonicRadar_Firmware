@@ -20,8 +20,6 @@
 #include "main.h"
 #include "dma.h"
 #include "i2c.h"
-#include "stm32f1xx_hal.h"
-#include "stm32f1xx_hal_gpio.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
@@ -167,8 +165,9 @@ void print_auto_OLED(float distance, float angle) {
 /*将距离和角度通过蓝牙发送至电脑*/
 void send_auto_bluetooth(float distance, float angle) {
   static char sendbuffer[50] = "";
-  sprintf(sendbuffer, "d=%.2f,a=%.2f", distance, angle);
-  HAL_UART_Transmit_DMA(&huart3, (uint8_t*)sendbuffer, strlen(sendbuffer));
+  uint16_t len = sprintf(sendbuffer, "d=%.2f,a=%.2f\r\n", distance, angle);
+  if (huart2.gState != HAL_UART_STATE_READY) return;
+  HAL_UART_Transmit_DMA(&huart2, (uint8_t*)sendbuffer, len);
 }
 
 
@@ -216,6 +215,7 @@ int main(void)
   MX_TIM1_Init();
   MX_TIM3_Init();
   MX_USART3_UART_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   // 初始化OLED
   HAL_Delay(20);
