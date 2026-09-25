@@ -69,8 +69,9 @@
 /* USER CODE BEGIN PV */
 // 状态机
 volatile static StateMachine_sample StateMachine = IDLE; 
-static int Pause_flag = 1;                   // 暂停标志位
-static int Oled_refresh_request_flag = 0;            // 请求OLED屏幕刷新标志位
+static int Pause_flag = -1;                  // 暂停标志位
+static int Enable_oled_print_flag = -1;      // 启用OLED屏幕输出标志位
+static int Oled_refresh_request_flag = 0;    // 请求OLED屏幕刷新标志位
 
 // 用于TIM3计时器的变量
 volatile int tim3_counter = 0;               // 剩余时间（us）
@@ -87,6 +88,7 @@ int valid_level_duration_tim4_up_signal = 1; // PWM有效电平时间(ms)的上�
 // LED小灯。main函数里赋值
 LED * LED_RED = NULL;
 LED * LED_GREEN = NULL;
+LED * LED_BLUE = NULL;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -171,7 +173,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     }
   } 
   if (htim == &htim2) {
-    if (StateMachine == IDLE || Pause_flag != 0) return;
+    if (StateMachine == IDLE || Pause_flag == 1) return;
     Oled_refresh_request_flag = 1;
   }
 }
@@ -260,54 +262,72 @@ int main(void)
   // 实例化LED小灯
   LED_RED = LED_Instantiate(LED_RED_GPIO_Port, LED_RED_Pin);
   LED_GREEN = LED_Instantiate(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
+  LED_BLUE = LED_Instantiate(LED_BLUE_GPIO_Port, LED_BLUE_Pin);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    // event: 暂停确认
-    if (KEY1_IS_PRESSED() && Pause_flag == 0) {
+    // event: 暂停
+    if (KEY1_IS_PRESSED()) {
       HAL_Delay(10);
-      if (KEY1_IS_PRESSED()) {
-        LED_off(LED_GREEN);
-        LED_on(LED_RED);
-        Pause_flag = 1;
+      if (KEY1_IS_PRESSED() && Pause_flag != -1) {
+        LED_toggle(LED_GREEN);
+        LED_toggle(LED_RED);
+        Pause_flag = 1 - Pause_flag;
+        
+        while (KEY1_IS_PRESSED());
       }
-      while (KEY1_IS_PRESSED());
+    }
+
+    // event: 启用或禁用OLED输出
+    if (KEY2_IS_PRESSED()) {
+      HAL_Delay(10);
+      if (KEY2_IS_PRESSED() && Enable_oled_print_flag != -1) {
+        LED_toggle(LED_BLUE);
+        Enable_oled_print_flag = 1 - Enable_oled_print_flag;
+
+        OLED_NewFrame();
+        if (Enable_oled_print_flag) print_auto_OLED(distance, angle);
+        OLED_ShowFrame();
+        
+        while (KEY2_IS_PRESSED());
+      }
     }
 
     // 遍历状态机
     switch (StateMachine) {
       case IDLE:
+        // 阻止HC-SR04在IDLE状态下工作
         set_trig_pin(GPIO_PIN_RESET);
+
+        // 启动时暂停
         LED_off(LED_GREEN);
         LED_on(LED_RED);
         Pause_flag = 1;
 
+        // 启动时不启用OLED输出
+        LED_off(LED_BLUE);
+        Oled_refresh_request_flag = 0;
+        Enable_oled_print_flag = 0;
+
+        // 允许状态机步进
         tim3_counter = 0;
         tim3_counter_AC_flag = 0;
 
+        // 启动时将舵机置于0度
         set_PWM_compare(50);
         StateMachine = TRIG_UP_AND_DOWN;
+
         HAL_Delay(500);
         break;
 
       case TRIG_UP_AND_DOWN:
-        //event: 暂停取消
-        while (Pause_flag == 1) {
-          if (KEY1_IS_PRESSED()) {
-              HAL_Delay(10);
-              if (KEY1_IS_PRESSED()) {
-                LED_on(LED_GREEN);
-                LED_off(LED_RED);
-                Pause_flag = 0;
-              }
-              while (KEY1_IS_PRESSED());
-          }
-        }
+        // 在暂停时,将状态机卡在TRIG_UP_AND_DOWN
+        if (Pause_flag == 1) break;
 
-        // 正在计数
+        // 正在倒计时
         if (tim3_counter != 0) break;
         
         // 刚进入此状态
@@ -324,7 +344,7 @@ int main(void)
       case PROCESSING: //callback: 03
         distance = calc_distance_cm(up_edge_tim1, down_edge_tim1);
         angle = (valid_level_duration_tim4 - 0.5) * 90;
-        if (ENABLE_OLED_PRINT && Oled_refresh_request_flag == 1) {
+        if (ENABLE_OLED_PRINT && Oled_refresh_request_flag == 1 && Enable_oled_print_flag == 1) {
           print_auto_OLED(distance, angle);
         }
         StateMachine = ROTATE;
