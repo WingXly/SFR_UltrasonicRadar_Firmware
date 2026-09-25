@@ -9,14 +9,14 @@ struct LED {
 };
 
 
-LED * LED_obj_init(GPIO_TypeDef *port, uint16_t pin) {
+LED * LED_Instantiate(GPIO_TypeDef *port, uint16_t pin) {
   LED *this = malloc(sizeof(LED));
   if (!this) return NULL;
   this->port = port;
   this->pin = pin;
   return this;
 }
-void LED_obj_deinit(LED *this) { free(this); }
+void LED_Free(LED *this) { free(this); }
 
 
 void LED_on(LED *this) {

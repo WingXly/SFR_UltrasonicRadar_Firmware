@@ -5,8 +5,8 @@
 
 typedef struct LED LED;
 
-LED * LED_obj_init(GPIO_TypeDef *port, uint16_t pin);
-void LED_obj_deinit(LED *this);
+LED * LED_Instantiate(GPIO_TypeDef *port, uint16_t pin);
+void LED_Free(LED *this);
 void LED_on(LED *this);
 void LED_off(LED *this);
 

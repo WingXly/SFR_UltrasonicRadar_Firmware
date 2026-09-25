@@ -74,7 +74,7 @@ void Error_Handler(void);
 #define HC_SR04_Trig_GPIO_Port GPIOA
 
 /* USER CODE BEGIN Private defines */
-
+#define KEY1_IS_PRESSED() (HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_RESET)
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

@@ -40,12 +40,23 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+// 声速
 #define SPEED_OF_SOUND_m_s 340.0
-#define TIM3_PERIOD_us 10
-#define COOLING_TIME_us 10000
-#define RADAR_PWM_STEP_ms 0.05f
 
-#define KEY1_IS_PRESSED() (HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_RESET)
+// TIM3自动重装载间隔
+#define TIM3_PERIOD_us 10
+
+// 冷却时间
+#define COOLING_TIME_us 30000
+
+// 舵机的PWM步进时间
+#define RADAR_PWM_STEP_ms 0.025f
+
+// HC-SR04的触发用时
+#define TRIG_DURATION 10
+
+// 是否启用OLED输出
+#define ENABLE_OLED_PRINT 0
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -58,11 +69,11 @@
 /* USER CODE BEGIN PV */
 // 状态机
 volatile static StateMachine_sample StateMachine = IDEL; 
-static int PauseFlag = 1;                    // 暂停标志位
+static int Pause_flag = 1;                   // 暂停标志位
 
 // 用于TIM3计时器的变量
-volatile int counter_tim3 = 0;               // 剩余时间（us）
-volatile int counter_tim3_AC_signal = 0;     // 归零标志
+volatile int tim3_counter = 0;               // 剩余时间（us）
+volatile int tim3_counter_AC_flag = 0;       // 倒计时结束标志
 
 // 用于TIM1捕获的变量
 volatile int up_edge_tim1 = 0;               // 上升沿所对应的计数器值
@@ -100,15 +111,15 @@ void set_PWM_compare(int compare) {
 /*计时器自动重装载回调函数。用于TIM3的us级计时*/
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
   if (htim == &htim3) {
-    if (counter_tim3 > 0) {
-      counter_tim3--;
-      if (counter_tim3 == 0) counter_tim3_AC_signal = 1;
+    if (tim3_counter > 0) {
+      tim3_counter--;
+      if (tim3_counter == 0) tim3_counter_AC_flag = 1;
     }
   }
 }
 
 
-// callback: 02
+// $02: callback
 /*计时器捕获处理函数。用于TIM1捕获上升和下降沿*/
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
   if (htim->Instance == TIM1 && htim->Channel == HAL_TIM_ACTIVE_CHANNEL_4) {
@@ -119,7 +130,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
     // 更新状态机
     if (StateMachine == MEASURING) {
       StateMachine = PROCESSING;
-      //call: 03
+      // $03: call
     }
   }
 }
@@ -134,7 +145,7 @@ float calc_distance_cm(int up_edge_number, int down_edge_number) {
 }
 
 /*自动计算TIM4的下一个compare值*/
-int change_compare_tim4(void) {
+int calc_next_tim4_compare(void) {
   if (valid_level_duration_tim4_up_signal == 1) {
     valid_level_duration_tim4 += RADAR_PWM_STEP_ms;
   } else {
@@ -156,12 +167,12 @@ int change_compare_tim4(void) {
 /*将距离和角度输出在OLED上*/
 void print_auto_OLED(float distance, float angle) {
   OLED_NewFrame();
-  char print_msg_distance[20] = "";
-  sprintf(print_msg_distance, "d = %.2f", distance);
-  OLED_PrintString(0, 0, print_msg_distance, &font16x16, OLED_COLOR_NORMAL);
-  char print_msg_angle[20] = "";
-  sprintf(print_msg_angle, "a = %.2f", angle);
-  OLED_PrintString(0, 16, print_msg_angle, &font16x16, OLED_COLOR_NORMAL);
+  char printMsg_distance[20] = "";
+  sprintf(printMsg_distance, "d = %.2f", distance);
+  OLED_PrintString(0, 0, printMsg_distance, &font16x16, OLED_COLOR_NORMAL);
+  char printMsg_angle[20] = "";
+  sprintf(printMsg_angle, "a = %.2f", angle);
+  OLED_PrintString(0, 16, printMsg_angle, &font16x16, OLED_COLOR_NORMAL);
   OLED_ShowFrame();
 }
 
@@ -212,30 +223,32 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  // 初始化OLED
-  HAL_Delay(20);
-  OLED_Init();
-  OLED_NewFrame();
-  OLED_PrintString(0, 0, "Start", &font16x16, OLED_COLOR_NORMAL);
-  OLED_ShowFrame();
+  if (ENABLE_OLED_PRINT) {
+    // 初始化OLED
+    HAL_Delay(20);
+    OLED_Init();
+    OLED_NewFrame();
+    OLED_PrintString(0, 0, "Start", &font16x16, OLED_COLOR_NORMAL);
+    OLED_ShowFrame();
+  }
 
   // 初始化TIM1
   HAL_TIM_Base_Start(&htim1);
   HAL_TIM_IC_Start(&htim1, TIM_CHANNEL_3);
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_4);
-  float distance;
+  float distance;                                                  // 距离（计算值）
 
   // 初始化TIM3
   HAL_TIM_Base_Start_IT(&htim3);
 
   // 初始化TIM4
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
-  int compare_tim4 = 0;
-  float angle = 0;
+  int tim4_compare = 0;                                            // TIM4（PWM）的compare值
+  float angle = 0;                                                 // 角度（计算值）
 
-  // LED小灯
-  LED_RED = LED_obj_init(LED_RED_GPIO_Port, LED_RED_Pin);
-  LED_GREEN = LED_obj_init(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
+  // 实例化LED小灯
+  LED_RED = LED_Instantiate(LED_RED_GPIO_Port, LED_RED_Pin);
+  LED_GREEN = LED_Instantiate(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -243,12 +256,12 @@ int main(void)
   while (1)
   {
     // event: 暂停确认
-    if (KEY1_IS_PRESSED() && PauseFlag == 0) {
+    if (KEY1_IS_PRESSED() && Pause_flag == 0) {
       HAL_Delay(10);
       if (KEY1_IS_PRESSED()) {
         LED_off(LED_GREEN);
         LED_on(LED_RED);
-        PauseFlag = 1;
+        Pause_flag = 1;
       }
       while (KEY1_IS_PRESSED());
     }
@@ -259,10 +272,10 @@ int main(void)
         set_trig_pin(GPIO_PIN_RESET);
         LED_off(LED_GREEN);
         LED_on(LED_RED);
-        PauseFlag = 1;
+        Pause_flag = 1;
 
-        counter_tim3 = 0;
-        counter_tim3_AC_signal = 0;
+        tim3_counter = 0;
+        tim3_counter_AC_flag = 0;
 
         set_PWM_compare(50);
         StateMachine = TRIG_UP_AND_DOWN;
@@ -271,27 +284,26 @@ int main(void)
 
       case TRIG_UP_AND_DOWN:
         //event: 暂停取消
-        while (PauseFlag == 1) {
+        while (Pause_flag == 1) {
           if (KEY1_IS_PRESSED()) {
               HAL_Delay(10);
               if (KEY1_IS_PRESSED()) {
                 LED_on(LED_GREEN);
                 LED_off(LED_RED);
-                PauseFlag = 0;
+                Pause_flag = 0;
               }
               while (KEY1_IS_PRESSED());
           }
         }
 
         // 正在计数
-        if (counter_tim3 != 0) break;
+        if (tim3_counter != 0) break;
 
         // 刚进入此状态
-        if (counter_tim3_AC_signal == 0) {
+        if (tim3_counter_AC_flag == 0) {
           set_trig_pin(GPIO_PIN_SET);
-          // 让TIM3计时50us
-          counter_tim3 = 50/TIM3_PERIOD_us;
-          // call: 01
+          tim3_counter = TRIG_DURATION/TIM3_PERIOD_us;
+          // $01 call
         }
         break;
 
@@ -301,43 +313,44 @@ int main(void)
       case PROCESSING: //callback: 03
         distance = calc_distance_cm(up_edge_tim1, down_edge_tim1);
         angle = (valid_level_duration_tim4 - 0.5) * 90;
-        print_auto_OLED(distance, angle);
+        if (ENABLE_OLED_PRINT) print_auto_OLED(distance, angle);
         StateMachine = ROTATE;
         break;
 
       case ROTATE:
-        set_PWM_compare(compare_tim4);
-        compare_tim4 = change_compare_tim4();
-        counter_tim3 = 0;
-        counter_tim3_AC_signal = 0;
+        set_PWM_compare(tim4_compare);
+        tim4_compare = calc_next_tim4_compare();
+        tim3_counter = 0;
+        tim3_counter_AC_flag = 0;
         StateMachine = COOLING;
         break;
 
       case COOLING:
         // 正在计数
-        if (counter_tim3 != 0) break;
+        if (tim3_counter != 0) break;
 
         // 刚进入COOLING
-        if (counter_tim3_AC_signal == 0) {
+        if (tim3_counter_AC_flag == 0) {
           send_auto_bluetooth(distance, angle);
-          counter_tim3 = COOLING_TIME_us / TIM3_PERIOD_us;
+          tim3_counter = COOLING_TIME_us / TIM3_PERIOD_us;
         }
         break;
-        // call: 04
+        // $04 call
     }
 
-    // callback: 01
-    if (StateMachine == TRIG_UP_AND_DOWN && counter_tim3_AC_signal == 1) {
+
+    // $01 callback
+    if (StateMachine == TRIG_UP_AND_DOWN && tim3_counter_AC_flag == 1) {
         set_trig_pin(GPIO_PIN_RESET);
         __HAL_TIM_SET_COUNTER(&htim1, 0); // 将TIM1清零，防止测量时自动重装载
-        counter_tim3_AC_signal = 0;
+        tim3_counter_AC_flag = 0;
         StateMachine = MEASURING;
         //call: 02
     }
 
-    // callback: 04
-    if (StateMachine == COOLING && counter_tim3_AC_signal == 1) {
-      counter_tim3_AC_signal = 0;
+    // $04 callback
+    if (StateMachine == COOLING && tim3_counter_AC_flag == 1) {
+      tim3_counter_AC_flag = 0;
       StateMachine = TRIG_UP_AND_DOWN;
     }
     /* USER CODE END WHILE */
