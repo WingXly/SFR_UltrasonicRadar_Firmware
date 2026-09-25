@@ -56,7 +56,7 @@
 #define TRIG_DURATION 10
 
 // 是否启用OLED输出
-#define ENABLE_OLED_PRINT 0
+#define ENABLE_OLED_PRINT 1
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -68,8 +68,9 @@
 
 /* USER CODE BEGIN PV */
 // 状态机
-volatile static StateMachine_sample StateMachine = IDEL; 
+volatile static StateMachine_sample StateMachine = IDLE; 
 static int Pause_flag = 1;                   // 暂停标志位
+static int Oled_refresh_request_flag = 0;            // 请求OLED屏幕刷新标志位
 
 // 用于TIM3计时器的变量
 volatile int tim3_counter = 0;               // 剩余时间（us）
@@ -105,34 +106,6 @@ void set_trig_pin(GPIO_PinState pin_state) {
 /*设置TIM4的PWM占空比*/
 void set_PWM_compare(int compare) {
   __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, compare);
-}
-
-
-/*计时器自动重装载回调函数。用于TIM3的us级计时*/
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-  if (htim == &htim3) {
-    if (tim3_counter > 0) {
-      tim3_counter--;
-      if (tim3_counter == 0) tim3_counter_AC_flag = 1;
-    }
-  }
-}
-
-
-// $02: callback
-/*计时器捕获处理函数。用于TIM1捕获上升和下降沿*/
-void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
-  if (htim->Instance == TIM1 && htim->Channel == HAL_TIM_ACTIVE_CHANNEL_4) {
-    if (StateMachine != MEASURING) return;
-    // 读取上升沿和下降沿的数值
-    up_edge_tim1 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_3);
-    down_edge_tim1 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_4);
-    // 更新状态机
-    if (StateMachine == MEASURING) {
-      StateMachine = PROCESSING;
-      // $03: call
-    }
-  }
 }
 
 
@@ -184,6 +157,41 @@ void send_auto_bluetooth(float distance, float angle) {
   if (huart2.gState != HAL_UART_STATE_READY) return;
   HAL_UART_Transmit_DMA(&huart2, (uint8_t*)sendbuffer, len);
 }
+
+
+/*----------------------------------------------------------------------------------------------------*/
+
+
+/*计时器自动重装载回调函数。用于TIM3的us级计时和TIM2的OLED展示*/
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+  if (htim == &htim3) {
+    if (tim3_counter > 0) {
+      tim3_counter--;
+      if (tim3_counter == 0) tim3_counter_AC_flag = 1;
+    }
+  } 
+  if (htim == &htim2) {
+    if (StateMachine == IDLE || Pause_flag != 0) return;
+    Oled_refresh_request_flag = 1;
+  }
+}
+
+
+// $02: callback
+/*计时器捕获处理函数。用于TIM1捕获上升和下降沿*/
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
+  if (htim->Instance == TIM1 && htim->Channel == HAL_TIM_ACTIVE_CHANNEL_4) {
+    if (StateMachine != MEASURING) return;
+    // 读取上升沿和下降沿的数值
+    up_edge_tim1 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_3);
+    down_edge_tim1 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_4);
+    // 更新状态机
+    if (StateMachine == MEASURING) {
+      StateMachine = PROCESSING;
+      // $03: call
+    }
+  }
+}
 /* USER CODE END 0 */
 
 /**
@@ -222,29 +230,32 @@ int main(void)
   MX_TIM3_Init();
   MX_USART3_UART_Init();
   MX_USART2_UART_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-  if (ENABLE_OLED_PRINT) {
-    // 初始化OLED
-    HAL_Delay(20);
-    OLED_Init();
-    OLED_NewFrame();
-    OLED_PrintString(0, 0, "Start", &font16x16, OLED_COLOR_NORMAL);
-    OLED_ShowFrame();
-  }
+
+  // 初始化OLED
+  HAL_Delay(20);
+  OLED_Init();
+  OLED_NewFrame();
+  OLED_PrintString(0, 0, "Start", &font16x16, OLED_COLOR_NORMAL);
+  OLED_ShowFrame();
 
   // 初始化TIM1
   HAL_TIM_Base_Start(&htim1);
   HAL_TIM_IC_Start(&htim1, TIM_CHANNEL_3);
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_4);
-  float distance;                                                  // 距离（计算值）
+  float distance = 0;          // 距离（计算值）
+
+  // 初始化TIM2
+  HAL_TIM_Base_Start_IT(&htim2);
 
   // 初始化TIM3
   HAL_TIM_Base_Start_IT(&htim3);
 
   // 初始化TIM4
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
-  int tim4_compare = 0;                                            // TIM4（PWM）的compare值
-  float angle = 0;                                                 // 角度（计算值）
+  int tim4_compare = 0;        // TIM4（PWM）的compare值
+  float angle = 0;             // 角度（计算值）
 
   // 实例化LED小灯
   LED_RED = LED_Instantiate(LED_RED_GPIO_Port, LED_RED_Pin);
@@ -268,7 +279,7 @@ int main(void)
 
     // 遍历状态机
     switch (StateMachine) {
-      case IDEL:
+      case IDLE:
         set_trig_pin(GPIO_PIN_RESET);
         LED_off(LED_GREEN);
         LED_on(LED_RED);
@@ -298,7 +309,7 @@ int main(void)
 
         // 正在计数
         if (tim3_counter != 0) break;
-
+        
         // 刚进入此状态
         if (tim3_counter_AC_flag == 0) {
           set_trig_pin(GPIO_PIN_SET);
@@ -313,7 +324,9 @@ int main(void)
       case PROCESSING: //callback: 03
         distance = calc_distance_cm(up_edge_tim1, down_edge_tim1);
         angle = (valid_level_duration_tim4 - 0.5) * 90;
-        if (ENABLE_OLED_PRINT) print_auto_OLED(distance, angle);
+        if (ENABLE_OLED_PRINT && Oled_refresh_request_flag == 1) {
+          print_auto_OLED(distance, angle);
+        }
         StateMachine = ROTATE;
         break;
 

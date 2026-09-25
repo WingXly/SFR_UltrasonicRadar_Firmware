@@ -47,7 +47,7 @@ extern "C" {
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
 typedef enum {
-  IDEL,                // 空闲
+  IDLE,                // 空闲
   TRIG_UP_AND_DOWN,    // <main> 上拉与下拉触发器
   MEASURING,           // <TIM1> 超声波测距仪正在测距
   PROCESSING,          // <main> 计算距离与处理OLED显示
