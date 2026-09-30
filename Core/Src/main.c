@@ -20,6 +20,7 @@
 #include "main.h"
 #include "dma.h"
 #include "i2c.h"
+#include "stm32f1xx_hal_uart.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
@@ -35,7 +36,8 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+extern DMA_HandleTypeDef hdma_usart3_rx;
+extern DMA_HandleTypeDef hdma_usart3_tx;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -72,6 +74,8 @@ volatile static StateMachine_sample StateMachine = IDLE;
 static int Pause_flag = -1;                  // 暂停标志位
 static int Enable_oled_print_flag = -1;      // 启用OLED屏幕输出标志位
 static int Oled_refresh_request_flag = 0;    // 请求OLED屏幕刷新标志位
+volatile int Usart3_txCplx_flag = 0;         // 串口3发送完成标志位
+volatile int Usart3_rxCplx_flag = 0;         // 串口3接收完成标志位
 
 // 用于TIM3计时器的变量
 volatile int tim3_counter = 0;               // 剩余时间（us）
@@ -117,9 +121,11 @@ void set_PWM_compare(int compare)
 
 
 /*根据TIM1捕获计算距离*/
-float calc_distance_cm(int up_edge_number, int down_edge_number)
+float calc_distance_mm(int up_edge_number, int down_edge_number)
 {
-  return (((float)down_edge_number - (float)up_edge_number) * (float)SPEED_OF_SOUND_m_s / 10000 / 2);
+  return (
+    ( (float)down_edge_number - (float)up_edge_number ) * (float)SPEED_OF_SOUND_m_s / 2000.0f
+  );
 }
 
 
@@ -159,17 +165,51 @@ void print_auto_OLED(float distance, float angle)
 }
 
 
-/*将距离和角度通过串口发送至电脑*/
-void send_auto_bluetooth(float distance, float angle)
+/*
+将距离和角度通过串口发送至电脑。采用二进制帧结构发布通知：
+
+uint8_t sendbuffer[9]:
+帧头         长度    角度     距离        校验      帧尾
+0xAA 0x55    N      int16    uint16      XOR      0x0D
+0    1       2      3   4    5    6      7        8
+
+传入的角度单位：度
+传入的距离单位：mm
+*/
+void send_auto_bluetooth(float distance_mm, float angle_deg)
 {
-  if (huart3.gState != HAL_UART_STATE_READY) return;
-  static char sendbuffer[50] = "";
-  uint16_t len = sprintf(sendbuffer, "d=%.2f,a=%.2f\r\n", distance, angle);
-  HAL_UART_Transmit_DMA(&huart3, (uint8_t*)sendbuffer, len);
+  if (Usart3_txCplx_flag == 0) return;
+  static uint8_t sendbuffer[9] = "";
+
+  sendbuffer[0] = 0xAA;
+  sendbuffer[1] = 0x55;
+  sendbuffer[2] = 5;                                 // 长度
+  // 以0.01度为单位发送角度数据
+  sendbuffer[3] = (int16_t)(angle_deg * 100) >> 8;   // 角度高字节
+  sendbuffer[4] = (int16_t)(angle_deg * 100) & 0xFF; // 角度低字节
+  // 以1mm为单位发送距离数据
+  sendbuffer[5] = (uint16_t)distance_mm >> 8;        // 距离高字节
+  sendbuffer[6] = (uint16_t)distance_mm & 0xFF;      // 距离低字节
+  sendbuffer[7] = sendbuffer[2] ^ sendbuffer[3] ^ sendbuffer[4] ^ sendbuffer[5] ^ sendbuffer[6]; // 校验
+  sendbuffer[8] = 0x0D;                              // 帧尾
+
+  Usart3_txCplx_flag = 0;
+  HAL_UART_Transmit_DMA(&huart3, sendbuffer, 9);
+  __HAL_DMA_DISABLE_IT(&hdma_usart3_tx, DMA_IT_HT); // 禁止半传输中断
+  // $05: call
 }
 
 
 /*----------------------------------------------------------------------------------------------------*/
+
+/*串口Tx回调函数*/
+// $05: callback
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART3) {
+        Usart3_txCplx_flag = 1;
+    }
+}
 
 
 /*计时器自动重装载回调函数。用于TIM3的us级计时和TIM2的OLED展示*/
@@ -242,7 +282,6 @@ int main(void)
   MX_TIM1_Init();
   MX_TIM3_Init();
   MX_USART3_UART_Init();
-  MX_USART2_UART_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
@@ -292,6 +331,7 @@ int main(void)
       }
     }
 
+
     // event: 启用或禁用OLED输出
     if (KEY2_IS_PRESSED()) {
       HAL_Delay(10);
@@ -306,6 +346,7 @@ int main(void)
         while (KEY2_IS_PRESSED());
       }
     }
+
 
     // 遍历状态机
     switch (StateMachine)
@@ -332,6 +373,9 @@ int main(void)
         set_PWM_compare(50);
         StateMachine = TRIG_UP_AND_DOWN;
 
+        // 启用蓝牙发送
+        Usart3_txCplx_flag = 1;
+
         HAL_Delay(500);
         break;
 
@@ -356,8 +400,9 @@ int main(void)
         break;
 
 
-      case PROCESSING: //callback: 03
-        distance = calc_distance_cm(up_edge_tim1, down_edge_tim1);
+      case PROCESSING:
+      // $03: callback
+        distance = calc_distance_mm(up_edge_tim1, down_edge_tim1);
         angle = (valid_level_duration_tim4 - 0.5) * 90;
         if (ENABLE_OLED_PRINT && Oled_refresh_request_flag == 1 && Enable_oled_print_flag == 1) {
           print_auto_OLED(distance, angle);
