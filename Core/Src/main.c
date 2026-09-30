@@ -100,13 +100,15 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 /*设置HC-SR04触发器的output*/
-void set_trig_pin(GPIO_PinState pin_state) {
+void set_trig_pin(GPIO_PinState pin_state)
+{
   HAL_GPIO_WritePin(HC_SR04_Trig_GPIO_Port, HC_SR04_Trig_Pin, pin_state);
 }
 
 
 /*设置TIM4的PWM占空比*/
-void set_PWM_compare(int compare) {
+void set_PWM_compare(int compare)
+{
   __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, compare);
 }
 
@@ -115,12 +117,15 @@ void set_PWM_compare(int compare) {
 
 
 /*根据TIM1捕获计算距离*/
-float calc_distance_cm(int up_edge_number, int down_edge_number) {
+float calc_distance_cm(int up_edge_number, int down_edge_number)
+{
   return (((float)down_edge_number - (float)up_edge_number) * (float)SPEED_OF_SOUND_m_s / 10000 / 2);
 }
 
+
 /*自动计算TIM4的下一个compare值*/
-int calc_next_tim4_compare(void) {
+int calc_next_tim4_compare(void)
+{
   if (valid_level_duration_tim4_up_signal == 1) {
     valid_level_duration_tim4 += RADAR_PWM_STEP_ms;
   } else {
@@ -139,8 +144,10 @@ int calc_next_tim4_compare(void) {
   return (int)(valid_level_duration_tim4 * 100.0f + 0.5f);
 }
 
+
 /*将距离和角度输出在OLED上*/
-void print_auto_OLED(float distance, float angle) {
+void print_auto_OLED(float distance, float angle)
+{
   OLED_NewFrame();
   char printMsg_distance[20] = "";
   sprintf(printMsg_distance, "d = %.2f", distance);
@@ -153,11 +160,12 @@ void print_auto_OLED(float distance, float angle) {
 
 
 /*将距离和角度通过串口发送至电脑*/
-void send_auto_bluetooth(float distance, float angle) {
+void send_auto_bluetooth(float distance, float angle)
+{
+  if (huart3.gState != HAL_UART_STATE_READY) return;
   static char sendbuffer[50] = "";
   uint16_t len = sprintf(sendbuffer, "d=%.2f,a=%.2f\r\n", distance, angle);
-  if (huart2.gState != HAL_UART_STATE_READY) return;
-  HAL_UART_Transmit_DMA(&huart2, (uint8_t*)sendbuffer, len);
+  HAL_UART_Transmit_DMA(&huart3, (uint8_t*)sendbuffer, len);
 }
 
 
@@ -165,13 +173,15 @@ void send_auto_bluetooth(float distance, float angle) {
 
 
 /*计时器自动重装载回调函数。用于TIM3的us级计时和TIM2的OLED展示*/
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
   if (htim == &htim3) {
     if (tim3_counter > 0) {
       tim3_counter--;
       if (tim3_counter == 0) tim3_counter_AC_flag = 1;
     }
   } 
+
   if (htim == &htim2) {
     if (StateMachine == IDLE || Pause_flag == 1) return;
     Oled_refresh_request_flag = 1;
@@ -181,7 +191,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
 // $02: callback
 /*计时器捕获处理函数。用于TIM1捕获上升和下降沿*/
-void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+{
   if (htim->Instance == TIM1 && htim->Channel == HAL_TIM_ACTIVE_CHANNEL_4) {
     if (StateMachine != MEASURING) return;
     // 读取上升沿和下降沿的数值
@@ -297,7 +308,8 @@ int main(void)
     }
 
     // 遍历状态机
-    switch (StateMachine) {
+    switch (StateMachine)
+    {
       case IDLE:
         // 阻止HC-SR04在IDLE状态下工作
         set_trig_pin(GPIO_PIN_RESET);
@@ -323,6 +335,7 @@ int main(void)
         HAL_Delay(500);
         break;
 
+
       case TRIG_UP_AND_DOWN:
         // 在暂停时,将状态机卡在TRIG_UP_AND_DOWN
         if (Pause_flag == 1) break;
@@ -338,8 +351,10 @@ int main(void)
         }
         break;
 
+
       case MEASURING:
         break;
+
 
       case PROCESSING: //callback: 03
         distance = calc_distance_cm(up_edge_tim1, down_edge_tim1);
@@ -350,6 +365,7 @@ int main(void)
         StateMachine = ROTATE;
         break;
 
+
       case ROTATE:
         set_PWM_compare(tim4_compare);
         tim4_compare = calc_next_tim4_compare();
@@ -358,6 +374,7 @@ int main(void)
         StateMachine = COOLING;
         break;
 
+        
       case COOLING:
         // 正在计数
         if (tim3_counter != 0) break;
@@ -380,6 +397,7 @@ int main(void)
         StateMachine = MEASURING;
         //call: 02
     }
+
 
     // $04 callback
     if (StateMachine == COOLING && tim3_counter_AC_flag == 1) {
