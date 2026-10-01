@@ -54,6 +54,12 @@ typedef enum {
   ROTATE,              // <main> 发布舵机旋转指令
   COOLING              // <TIM3> 冷却
 } StateMachine_sample;
+
+typedef struct {
+  UART_HandleTypeDef * huart;
+  DMA_HandleTypeDef * DMA_handle_rx;
+  DMA_HandleTypeDef * DMA_handle_tx;
+} Usart;
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
