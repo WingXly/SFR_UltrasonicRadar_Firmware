@@ -34,6 +34,7 @@ void TimerEp_SetCounter(Timer * this, int cycle);
 int TimerEp_GetArr(Timer * this);
 int TimerEp_GetPsc(Timer * this);
 float TimerEp_GetPeriod(Timer * this);
+float TimerEp_ms2cycle(Timer * this, float ms);
 TIM_TypeDef * TimerEp_GetInstance(Timer * this);
 
 // 普通定时器
@@ -43,6 +44,7 @@ void TimerEp_OrdinaryTimer_Reset(OrdinaryTimer * this);
 int TimerEp_OrdinaryTimer_If_Reset(OrdinaryTimer * this);
 int TimerEp_OrdinaryTimer_If_Counting(OrdinaryTimer * this);
 int TimerEp_OrdinaryTimer_If_AC(OrdinaryTimer * this);
+void TimerEp_OrdinaryTimer_SetCycle_ms(OrdinaryTimer * this, float time_ms);
 
 // PWM定时器
 void TimerEp_PwmTimer_SetCompare(PwmTimer * this, int compare);

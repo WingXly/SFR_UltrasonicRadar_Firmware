@@ -126,6 +126,13 @@ float TimerEp_GetPeriod(Timer * this)
 }
 
 
+/*将毫秒转换为计数周期*/
+float TimerEp_ms2cycle(Timer * this, float ms)
+{
+    return (float)( ms / TimerEp_GetPeriod(this) );
+}
+
+
 /*获取定时器的实例*/
 TIM_TypeDef * TimerEp_GetInstance(Timer * this)
 {
@@ -196,6 +203,13 @@ int TimerEp_OrdinaryTimer_If_AC(OrdinaryTimer * this)
     } else {
         return 0;
     }
+}
+
+
+/*根据传入的时间（单位：ms）自动设置cycle值*/
+void TimerEp_OrdinaryTimer_SetCycle_ms(OrdinaryTimer * this, float time_ms)
+{
+    TimerEp_OrdinaryTimer_SetCycle(this, (int)TimerEp_ms2cycle((Timer*)this, time_ms));
 }
 
 
