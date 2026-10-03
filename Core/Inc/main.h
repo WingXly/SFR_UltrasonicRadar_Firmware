@@ -48,12 +48,13 @@ extern "C" {
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
 typedef enum {
-  IDLE,                // 空闲
-  TRIG_UP_AND_DOWN,    // <main> 上拉与下拉触发器
-  MEASURING,           // <TIM1> 超声波测距仪正在测距
-  PROCESSING,          // <main> 计算距离与处理OLED显示
-  ROTATE,              // <main> 发布舵机旋转指令
-  COOLING              // <TIM3> 冷却
+  INIT,                   // 初始化
+  PAUSE_AND_EVENT_HANDLE, // 暂停与事件处理
+  TRIG_UP_AND_DOWN,       // <main> 上拉与下拉触发器
+  MEASURING,              // <TIM1> 超声波测距仪正在测距
+  PROCESSING,             // <main> 计算距离与处理OLED显示
+  ROTATE,                 // <main> 发布舵机旋转指令
+  COOLING                 // <TIM3> 冷却
 } StateMachine_TypeDef;
 /* USER CODE END EM */
 

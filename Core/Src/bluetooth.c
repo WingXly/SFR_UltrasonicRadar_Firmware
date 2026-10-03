@@ -9,7 +9,7 @@
 /* 以下变量定义在 main.c 中*/
 extern Usart * BlueTooth;
 extern volatile int BT_TX_CPLX;
-extern volatile int PAUSE;
+extern volatile int PAUSE_REQUEST;
 extern volatile int ENABLE_OLED;
 extern int compare_step;
 extern float cooling_time_ms;
@@ -109,13 +109,13 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
     {
         if (para == 0)      // 解除暂停
         {
-            PAUSE = 0;
+            PAUSE_REQUEST = 0;
             LED_on(LedGreen);
             LED_off(LedRed);
         }
         else if (para == 1) // 暂停
         {
-            PAUSE = 1;
+            PAUSE_REQUEST = 1;
             LED_off(LedGreen);
             LED_on(LedRed);
         }

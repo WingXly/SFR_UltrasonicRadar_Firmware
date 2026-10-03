@@ -62,9 +62,9 @@
 
 /* USER CODE BEGIN PV */
 
-volatile StateMachine_TypeDef StateMachine = IDLE; // 状态机
+volatile StateMachine_TypeDef StateMachine = INIT; // 状态机
 
-volatile int PAUSE = -1;                           // 是否暂停（IDLE默认暂停）
+volatile int PAUSE_REQUEST = 0;                           // 是否暂停（IDLE默认暂停）
 volatile int ENABLE_OLED = -1;                     // 是否启用OLED输出（IDLE默认不启用）
 
 volatile int OLED_REFRESH_REQUEST = 0;             // 请求OLED屏幕刷新标志位
@@ -161,7 +161,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
   // TIM2的OLED展示
   if (htim->Instance == TimerEp_GetInstance((Timer*)OledCycle_Timer)) {
-    if (StateMachine == IDLE || PAUSE == 1) return;
+    if (StateMachine == INIT || PAUSE_REQUEST == 1) return;
     OLED_REFRESH_REQUEST = 1;
   }
 }
@@ -288,44 +288,17 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    // event: 暂停
-    if (KEY1_IS_PRESSED()) {
-      HAL_Delay(10);
-      if (KEY1_IS_PRESSED() && PAUSE != -1) {
-        LED_toggle(LedGreen);
-        LED_toggle(LedRed);
-        PAUSE = 1 - PAUSE;
-        
-        while (KEY1_IS_PRESSED());
-      }
-    }
-
-    // event: 启用或禁用OLED输出
-    if (KEY2_IS_PRESSED()) {
-      HAL_Delay(10);
-      if (KEY2_IS_PRESSED() && ENABLE_OLED != -1) {
-        LED_toggle(LedBlue);
-        ENABLE_OLED = 1 - ENABLE_OLED;
-
-        OLED_NewFrame();
-        if (ENABLE_OLED) print_auto_OLED(distance, angle);
-        OLED_ShowFrame();
-        
-        while (KEY2_IS_PRESSED());
-      }
-    }
-
     // 遍历状态机
     switch (StateMachine)
     {
-      case IDLE:
+      case INIT:
         // 阻止HC-SR04在IDLE状态下工作
         CaptureTimer_TriggerDown(Capture_Timer);
 
         // 启动时暂停
         LED_off(LedGreen);
         LED_on(LedRed);
-        PAUSE = 1;
+        PAUSE_REQUEST = 1;
 
         // 启动时不启用OLED输出
         LED_off(LedBlue);
@@ -337,7 +310,6 @@ int main(void)
 
         // 启动时将舵机置于0度
         PwmTimer_SetCompareRate(ServoPwm_Timer, 0.025);
-        StateMachine = TRIG_UP_AND_DOWN;
 
         // 启用蓝牙发送和接收
         BT_TX_CPLX = 1;
@@ -345,13 +317,49 @@ int main(void)
         // 等待命令
         Usart_ReceiveToIdle_DMA_noHT(BlueTooth);
 
-        HAL_Delay(500);
+        HAL_Delay(100);
+        StateMachine = PAUSE_AND_EVENT_HANDLE;
+        break;
+
+
+      case PAUSE_AND_EVENT_HANDLE:
+        // event: 按按钮（KEY1）暂停或解除暂停
+        if (KEY1_IS_PRESSED()) {
+          HAL_Delay(10);
+          if (KEY1_IS_PRESSED()) {
+            LED_toggle(LedGreen);
+            LED_toggle(LedRed);
+            PAUSE_REQUEST = 1 - PAUSE_REQUEST;
+            
+            while (KEY1_IS_PRESSED());
+          }
+        }
+
+        // event: 按按钮（KEY2）启用或禁用OLED输出
+        if (KEY2_IS_PRESSED()) {
+          HAL_Delay(10);
+          if (KEY2_IS_PRESSED() && ENABLE_OLED != -1) {
+            LED_toggle(LedBlue);
+            ENABLE_OLED = 1 - ENABLE_OLED;
+
+            OLED_NewFrame();
+            if (ENABLE_OLED) print_auto_OLED(distance, angle);
+            OLED_ShowFrame();
+            
+            while (KEY2_IS_PRESSED());
+          }
+        }
+
+        // 如果不处于暂停，则进行下一步
+        if (PAUSE_REQUEST == 0) {
+          StateMachine = TRIG_UP_AND_DOWN;
+        }
         break;
 
 
       case TRIG_UP_AND_DOWN:
         // 在暂停时,将状态机卡在TRIG_UP_AND_DOWN
-        if (PAUSE == 1) break;
+        if (PAUSE_REQUEST == 1) break;
 
         // 正在倒计时
         if (OrdinaryTimer_If_Counting(MainCycle_Timer)) break;
@@ -415,7 +423,7 @@ int main(void)
     // $04 callback
     if ( StateMachine == COOLING && OrdinaryTimer_If_AC(MainCycle_Timer) ) {
       OrdinaryTimer_Reset(MainCycle_Timer);
-      StateMachine = TRIG_UP_AND_DOWN;
+      StateMachine = PAUSE_AND_EVENT_HANDLE;
     }
     /* USER CODE END WHILE */
 
