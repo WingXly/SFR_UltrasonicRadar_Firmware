@@ -22,6 +22,7 @@
 #ifndef __MAIN_H
 #define __MAIN_H
 
+#include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -53,13 +54,7 @@ typedef enum {
   PROCESSING,          // <main> 计算距离与处理OLED显示
   ROTATE,              // <main> 发布舵机旋转指令
   COOLING              // <TIM3> 冷却
-} StateMachine_sample;
-
-typedef struct {
-  UART_HandleTypeDef * huart;
-  DMA_HandleTypeDef * DMA_handle_rx;
-  DMA_HandleTypeDef * DMA_handle_tx;
-} Usart;
+} StateMachine_TypeDef;
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/

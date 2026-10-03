@@ -52,6 +52,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Inc/led.h
     Core/Src/timer_ep.c
     Core/Inc/timer_ep.h
+    Core/Src/bluetooth.c
+    Core/Inc/bluetooth.h
+    Core/Src/usart_ep.c
+    Core/Inc/usart_ep.h
     # Add user sources here
 )
 

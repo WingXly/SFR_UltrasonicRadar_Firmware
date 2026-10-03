@@ -36,6 +36,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/_intsup.h>
+#include "bluetooth.h"
+#include "usart_ep.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -52,16 +54,10 @@
 // HC-SR04的触发用时
 #define TRIG_DURATION_ms 0.01f
 
-// 冷却时间
-float COOLING_TIME_ms = 30.0f;
-
-// PWM的compare步进
-int PWM_COMPARE_STEP = 1;
-
 // 通讯协议
 #define FRAME_HEADER_1 0xAA
 #define FRAME_HEADER_2 0x55
-#define FRAME_END 0xD0
+#define FRAME_END 0x0D
 
 /* USER CODE END PD */
 
@@ -74,35 +70,35 @@ int PWM_COMPARE_STEP = 1;
 
 /* USER CODE BEGIN PV */
 
-// 状态与标志
-volatile static StateMachine_sample StateMachine = IDLE; // 状态机
-volatile static int Pause_flag = -1;                     // 暂停标志位
-volatile static int Enable_oled_flag = 1;                         // 是否启用OLED输出
-volatile static int Oled_refresh_request_flag = 0;       // 请求OLED屏幕刷新标志位
-volatile int UsartBluetooth_txCplx_flag = 0;             // 蓝牙串口发送完成标志位
-volatile int UsartBluetooth_rxCplx_flag = 0;             // 蓝牙串口接收完成标志位
+volatile StateMachine_TypeDef StateMachine = IDLE; // 状态机
+
+volatile int PAUSE = -1;                           // 是否暂停（IDLE默认暂停）
+volatile int ENABLE_OLED = -1;                     // 是否启用OLED输出（IDLE默认不启用）
+
+volatile int OLED_REFRESH_REQUEST = 0;             // 请求OLED屏幕刷新标志位
+volatile int BT_TX_CPLX = 1;                       // 蓝牙串口发送完成标志位
+volatile int BT_RX_CPLX = 1;                       // 蓝牙串口接收完成标志位
 
 // 用于捕获定时器的变量
-volatile int upEdge_counter = 0;                         // 上升沿所对应的计数器值
-volatile int downEdge_counter = 0;                       // 下降沿所对应的计数器值
+volatile int upEdge_counter = 0;                   // 上升沿所对应的计数器值
+volatile int downEdge_counter = 0;                 // 下降沿所对应的计数器值
 
 // 用于PWM控制的变量
-int autoCompare = 0;                                     // PWM计时器的compare值
-int autoCompare_multiplier = 1;                          // autoCompare的乘数 (1 或 -1)
+volatile int autoCompare = 0;                               // PWM计时器的compare值
+volatile int autoCompare_multiplier = 1;                    // autoCompare的乘数 (1 或 -1)
+volatile int autoCompare_step = 1;                          // PWM的autoCompare步进
+
+// 冷却时间
+volatile float cooling_time_ms = 30.0f;
+
+// 蓝牙串口
+uint8_t bluetooth_receiveData[20] = {0};
+Usart * Usart_bluetooth = NULL;
 
 // LED小灯
 LED * LedRed   = NULL;
 LED * LedGreen = NULL;
 LED * LedBlue  = NULL;
-
-// 蓝牙串口
-extern DMA_HandleTypeDef hdma_usart3_rx;
-extern DMA_HandleTypeDef hdma_usart3_tx;
-Usart Usart_bluetooth = {
-  .huart = &huart3,
-  .DMA_handle_rx = &hdma_usart3_rx,
-  .DMA_handle_tx = &hdma_usart3_tx,
-};
 
 // 定时器
 CaptureTimer  * Capture_Timer   = NULL;
@@ -130,14 +126,12 @@ float calc_distance_mm(int up_edge_number, int down_edge_number)
 
 
 /*自动计算TIM4的下一个compare值并返回它*/
-int autoCompare_next(void)
+void autoCompare_next(void)
 {
-  autoCompare += (autoCompare_multiplier * PWM_COMPARE_STEP);
-
+  // 钳制autoCompare，同时计算其乘数的值
   int ARR = TimerEp_GetArr((Timer*)ServoPwm_Timer);
   int autoCompare_max = (int)(ARR * 0.125f + 0.5f); // 向上取整+0.5
   int autoCompare_min = (int)(ARR * 0.025f + 0.5f);
-
   if (autoCompare >= autoCompare_max) {
     autoCompare = autoCompare_max;
     autoCompare_multiplier = -1;
@@ -147,7 +141,8 @@ int autoCompare_next(void)
     autoCompare_multiplier = 1;
   }
 
-  return autoCompare;
+  // 计算autoCompare。由于它是全局变量所以不需要返回值
+  autoCompare += (autoCompare_multiplier * autoCompare_step);
 }
 
 
@@ -165,52 +160,9 @@ void print_auto_OLED(float distance, float angle)
 }
 
 
-/*
-将距离和角度通过串口发送至电脑。采用二进制帧结构发布通知：
-
-uint8_t sendMsg[9]:
-帧头         长度    角度     距离        校验      帧尾
-0xAA 0x55    N      int16    uint16      XOR      0x0D
-0    1       2      3   4    5    6      7        8
-
-角度单位：度 -> 0.01度
-距离单位：mm -> mm
-*/
-void send_auto_bluetooth(float distance_mm, float angle_deg)
-{
-  if (UsartBluetooth_txCplx_flag == 0) return;
-  static uint8_t sendMsg[9] = "";
-
-  sendMsg[0] = FRAME_HEADER_1;
-  sendMsg[1] = FRAME_HEADER_2;
-  sendMsg[2] = 5;                                 // 长度
-  // 以0.01度为单位发送角度数据
-  sendMsg[3] = (int16_t)(angle_deg * 100) >> 8;   // 角度高字节
-  sendMsg[4] = (int16_t)(angle_deg * 100) & 0xFF; // 角度低字节
-  // 以1mm为单位发送距离数据
-  sendMsg[5] = (uint16_t)distance_mm >> 8;        // 距离高字节
-  sendMsg[6] = (uint16_t)distance_mm & 0xFF;      // 距离低字节
-  sendMsg[7] = sendMsg[2] ^ sendMsg[3] ^ sendMsg[4] ^ sendMsg[5] ^ sendMsg[6]; // 校验
-  sendMsg[8] = FRAME_END;                              // 帧尾
-
-  UsartBluetooth_txCplx_flag = 0;
-  HAL_UART_Transmit_DMA(Usart_bluetooth.huart, sendMsg, 9);
-  __HAL_DMA_DISABLE_IT(Usart_bluetooth.DMA_handle_tx, DMA_IT_HT); // 禁止半传输中断
-  // $05: call
-}
-
 
 /*----------------------------------------------------------------------------------------------------*/
 
-
-// $05: callback
-/*串口Tx回调函数*/
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-{
-    if (huart == Usart_bluetooth.huart) {
-        UsartBluetooth_txCplx_flag = 1;
-    }
-}
 
 
 /*计时器自动重装载回调函数*/
@@ -223,8 +175,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
   // TIM2的OLED展示
   if (htim->Instance == TimerEp_GetInstance((Timer*)OledCycle_Timer)) {
-    if (StateMachine == IDLE || Pause_flag == 1) return;
-    Oled_refresh_request_flag = 1;
+    if (StateMachine == IDLE || PAUSE == 1) return;
+    OLED_REFRESH_REQUEST = 1;
   }
 }
 
@@ -256,6 +208,9 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 
+  float distance = 0;          // 距离（计算值）
+  float angle = 0;             // 角度（计算值）
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -285,10 +240,12 @@ int main(void)
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
+  /* ---------------------------------------- */
   // 实例化LED小灯
   LedRed = LED_Instantiate(LED_RED_GPIO_Port, LED_RED_Pin);
   LedGreen = LED_Instantiate(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
   LedBlue = LED_Instantiate(LED_BLUE_GPIO_Port, LED_BLUE_Pin);
+
 
   // 实例化定时器
   Capture_Timer = TimerEp_CaptureTimer_Instantiate(
@@ -317,34 +274,29 @@ int main(void)
     TIM_CHANNEL_3
   );
 
-  // 确认所有对象创建成功
-  if ( LedRed == NULL || LedGreen == NULL || LedBlue == NULL ||
-       Capture_Timer == NULL || OledCycle_Timer == NULL || MainCycle_Timer == NULL || ServoPwm_Timer == NULL )
-  {
-    Error_Handler();
-  }
+  // 实例化蓝牙串口
+  extern DMA_HandleTypeDef hdma_usart3_rx;
+  extern DMA_HandleTypeDef hdma_usart3_tx;
+  Usart_bluetooth = Usart_Instantiate(
+    &huart3,
+    &hdma_usart3_rx,
+    &hdma_usart3_tx,
+    bluetooth_receiveData
+  );
+  /* ---------------------------------------- */
 
-  // 所有对象就绪之后，允许中断访问它们
-  if ( HAL_TIM_Base_Start(&htim1) != HAL_OK 
-       || HAL_TIM_IC_Start(&htim1, TIM_CHANNEL_3) != HAL_OK
-       || HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_4) != HAL_OK
-       || HAL_TIM_Base_Start_IT(&htim2) != HAL_OK
-       || HAL_TIM_Base_Start_IT(&htim3) != HAL_OK
-       || HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3) != HAL_OK )
-  {
-    Error_Handler();
-  }
-
-  // 初始化OLED
   HAL_Delay(20);
+  HAL_TIM_Base_Start(&htim1);
+  HAL_TIM_IC_Start(&htim1, TIM_CHANNEL_3);
+  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_4);
+  HAL_TIM_Base_Start_IT(&htim2);
+  HAL_TIM_Base_Start_IT(&htim3);
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
   OLED_Init();
+
   OLED_NewFrame();
   OLED_PrintString(0, 0, "Start", &font16x16, OLED_COLOR_NORMAL);
   OLED_ShowFrame();
-
-  float distance = 0;          // 距离（计算值）
-  int autoCompare = 0;         // TIM4（PWM）的compare值
-  float angle = 0;             // 角度（计算值）
 
   /* USER CODE END 2 */
 
@@ -355,31 +307,29 @@ int main(void)
     // event: 暂停
     if (KEY1_IS_PRESSED()) {
       HAL_Delay(10);
-      if (KEY1_IS_PRESSED() && Pause_flag != -1) {
+      if (KEY1_IS_PRESSED() && PAUSE != -1) {
         LED_toggle(LedGreen);
         LED_toggle(LedRed);
-        Pause_flag = 1 - Pause_flag;
+        PAUSE = 1 - PAUSE;
         
         while (KEY1_IS_PRESSED());
       }
     }
 
-
     // event: 启用或禁用OLED输出
     if (KEY2_IS_PRESSED()) {
       HAL_Delay(10);
-      if (KEY2_IS_PRESSED()) {
+      if (KEY2_IS_PRESSED() && ENABLE_OLED != -1) {
         LED_toggle(LedBlue);
-        Enable_oled_flag = 1 - Enable_oled_flag;
+        ENABLE_OLED = 1 - ENABLE_OLED;
 
         OLED_NewFrame();
-        if (Enable_oled_flag) print_auto_OLED(distance, angle);
+        if (ENABLE_OLED) print_auto_OLED(distance, angle);
         OLED_ShowFrame();
         
         while (KEY2_IS_PRESSED());
       }
     }
-
 
     // 遍历状态机
     switch (StateMachine)
@@ -391,12 +341,12 @@ int main(void)
         // 启动时暂停
         LED_off(LedGreen);
         LED_on(LedRed);
-        Pause_flag = 1;
+        PAUSE = 1;
 
         // 启动时不启用OLED输出
         LED_off(LedBlue);
-        Oled_refresh_request_flag = 0;
-        Enable_oled_flag = 0;
+        OLED_REFRESH_REQUEST = 0;
+        ENABLE_OLED = 0;
 
         // 允许状态机步进
         TimerEp_OrdinaryTimer_Reset(MainCycle_Timer);
@@ -405,8 +355,12 @@ int main(void)
         TimerEp_PwmTimer_SetCompareRate(ServoPwm_Timer, 0.025);
         StateMachine = TRIG_UP_AND_DOWN;
 
-        // 启用蓝牙发送
-        UsartBluetooth_txCplx_flag = 1;
+        // 启用蓝牙发送和接收
+        BT_TX_CPLX = 1;
+
+        // 等待命令
+        HAL_UARTEx_ReceiveToIdle_DMA(Usart_bluetooth->huart, Usart_bluetooth->receive_data_p, 20);
+        __HAL_DMA_DISABLE_IT(Usart_bluetooth->DMA_handle_rx, DMA_IT_HT); // 禁止半传输中断
 
         HAL_Delay(500);
         break;
@@ -414,7 +368,7 @@ int main(void)
 
       case TRIG_UP_AND_DOWN:
         // 在暂停时,将状态机卡在TRIG_UP_AND_DOWN
-        if (Pause_flag == 1) break;
+        if (PAUSE == 1) break;
 
         // 正在倒计时
         if (TimerEp_OrdinaryTimer_If_Counting(MainCycle_Timer)) break;
@@ -436,13 +390,13 @@ int main(void)
       // $03: callback
         distance = calc_distance_mm(upEdge_counter, downEdge_counter);
         angle = (TimerEp_PwmTimer_GetCompareRate(ServoPwm_Timer) - 0.025) * 10 * 180;
-        if (Oled_refresh_request_flag == 1 && Enable_oled_flag == 1 ) print_auto_OLED(distance, angle);
+        if (OLED_REFRESH_REQUEST == 1 && ENABLE_OLED == 1 ) print_auto_OLED(distance, angle);
         StateMachine = ROTATE;
         break;
 
 
       case ROTATE:
-        autoCompare = autoCompare_next();
+        autoCompare_next();
         TimerEp_PwmTimer_SetCompare(ServoPwm_Timer, autoCompare);
         TimerEp_OrdinaryTimer_Reset(MainCycle_Timer);
         StateMachine = COOLING;
@@ -456,7 +410,7 @@ int main(void)
         // 刚进入COOLING
         if ( TimerEp_OrdinaryTimer_If_Reset(MainCycle_Timer) ) {
           send_auto_bluetooth(distance, angle);
-          TimerEp_OrdinaryTimer_SetCycle_ms(MainCycle_Timer, COOLING_TIME_ms);
+          TimerEp_OrdinaryTimer_SetCycle_ms(MainCycle_Timer, cooling_time_ms);
         }
         break;
         // $04 call
