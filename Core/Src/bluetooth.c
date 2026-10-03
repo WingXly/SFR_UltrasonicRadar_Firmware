@@ -7,23 +7,22 @@
 
 
 /* 以下变量定义在 main.c 中*/
-extern Usart * Usart_bluetooth;
+extern Usart * BlueTooth;
 extern volatile int BT_TX_CPLX;
 extern volatile int PAUSE;
 extern volatile int ENABLE_OLED;
-extern int autoCompare_step;
+extern int compare_step;
 extern float cooling_time_ms;
 extern LED * LedRed;
 extern LED * LedGreen;
 extern LED * LedBlue;
-extern uint8_t bluetooth_receiveData[];
 
 
 // $05: callback
 /*串口Tx回调函数*/
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
-    if (huart == Usart_bluetooth->huart) {
+    if (huart == Usart_pHuart(BlueTooth)) {
         BT_TX_CPLX = 1;
     }
 }
@@ -31,10 +30,10 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
-    bluetooth_msg_handler(bluetooth_receiveData, Size);
-    // 等待下一个命令
-    HAL_UARTEx_ReceiveToIdle_DMA(Usart_bluetooth->huart, bluetooth_receiveData, 20);
-    __HAL_DMA_DISABLE_IT(Usart_bluetooth->DMA_handle_rx, DMA_IT_HT); // 禁止半传输中断
+    if (huart == Usart_pHuart(BlueTooth)) {
+        bluetooth_msg_handler(Usart_pReceiveData(BlueTooth), Size);
+        Usart_ReceiveToIdle_DMA_noHT(BlueTooth);
+    }
 }
 
 /*
@@ -66,8 +65,7 @@ void send_auto_bluetooth(float distance_mm, float angle_deg)
     sendMsg[8] = FRAME_END;                              // 帧尾
 
     BT_TX_CPLX = 0;
-    HAL_UART_Transmit_DMA(Usart_bluetooth->huart, sendMsg, 9);
-    __HAL_DMA_DISABLE_IT(Usart_bluetooth->DMA_handle_tx, DMA_IT_HT); // 禁止半传输中断
+    Usart_Transmit_DMA_noHT(BlueTooth, sendMsg, 9);
     // $05: call
 }
 
@@ -146,19 +144,19 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
 /*执行来自蓝牙的双参数命令（需要先解析）*/
 void command_handler_2para(uint16_t cmd_type, uint16_t para1, uint16_t para2)
 {
-    if (cmd_type == 2)      // 设置 autoCompare_step。将para一比一转换
+    if (cmd_type == 2)      // 设置 compare_step。将para一比一转换
     {
-        int autoCompare_step_old = autoCompare_step;
+        int compare_step_old = compare_step;
         if (para1 == 1) {        // set
-            autoCompare_step = para2;
+            compare_step = para2;
         } else if (para1 == 2) { // add
-            autoCompare_step += para2;
+            compare_step += para2;
         } else if (para1 == 3) { // remove
-            autoCompare_step -= para2;
+            compare_step -= para2;
         }
         
-        if (autoCompare_step < 0 || autoCompare_step > 250) {
-            autoCompare_step = autoCompare_step_old;
+        if (compare_step < 0 || compare_step > 250) {
+            compare_step = compare_step_old;
             send_error_bluetooth();
         }
     }
@@ -191,6 +189,5 @@ void send_error_bluetooth()
 {
     static char sendMsg[50] = "Error";
     BT_TX_CPLX = 0;
-    HAL_UART_Transmit_DMA(Usart_bluetooth->huart, (uint8_t*)sendMsg, strlen(sendMsg));
-    __HAL_DMA_DISABLE_IT(Usart_bluetooth->DMA_handle_tx, DMA_IT_HT); // 禁止半传输中断
+    Usart_Transmit_DMA_noHT(BlueTooth, (uint8_t*)sendMsg, strlen(sendMsg));
 }

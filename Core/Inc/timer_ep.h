@@ -12,21 +12,18 @@ typedef struct CaptureTimer CaptureTimer;
 
 
 // 初始化与释放
-OrdinaryTimer * TimerEp_OrdinaryTimer_Instantiate(TIM_HandleTypeDef * htim,
-                                                  float timer_clock_MHz
-                                                  );
-PwmTimer * TimerEp_PwmTimer_Instantiate(TIM_HandleTypeDef * htim,
+OrdinaryTimer * OrdinaryTimer_Instantiate(  TIM_HandleTypeDef * htim,
+                                            float timer_clock_MHz );
+PwmTimer * PwmTimer_Instantiate(TIM_HandleTypeDef * htim,
+                                float timer_clock_MHz,
+                                int PWM_generation_channel );
+CaptureTimer * CaptureTimer_Instantiate(TIM_HandleTypeDef * htim,
                                         float timer_clock_MHz,
-                                        int PWM_generation_channel
-                                        );
-CaptureTimer * TimerEp_CaptureTimer_Instantiate(TIM_HandleTypeDef * htim,
-                                                float timer_clock_MHz,
-                                                GPIO_TypeDef * trig_port,
-                                                uint16_t trig_pin,
-                                                int capture_upEdge_channel,
-                                                int capture_downEdge_channel,
-                                                HAL_TIM_ActiveChannel capture_active_channel
-                                                );
+                                        GPIO_TypeDef * trig_port,
+                                        uint16_t trig_pin,
+                                        int capture_channel_1,
+                                        int capture_channel_2,
+                                        HAL_TIM_ActiveChannel capture_active_channel );
 void TimerEp_Timer_Free(Timer * this);
 
 // 定时器基本方法
@@ -38,28 +35,33 @@ float TimerEp_ms2cycle(Timer * this, float ms);
 TIM_TypeDef * TimerEp_GetInstance(Timer * this);
 
 // 普通定时器
-void TimerEp_OrdinaryTimer_SetCycle(OrdinaryTimer * this, int cycle);
-void TimerEp_OrdinaryTimer_CountDown(OrdinaryTimer * this);
-void TimerEp_OrdinaryTimer_Reset(OrdinaryTimer * this);
-int TimerEp_OrdinaryTimer_If_Reset(OrdinaryTimer * this);
-int TimerEp_OrdinaryTimer_If_Counting(OrdinaryTimer * this);
-int TimerEp_OrdinaryTimer_If_AC(OrdinaryTimer * this);
-void TimerEp_OrdinaryTimer_SetCycle_ms(OrdinaryTimer * this, float time_ms);
+void OrdinaryTimer_SetCycle(OrdinaryTimer * this, int cycle);
+void OrdinaryTimer_CountDown(OrdinaryTimer * this);
+void OrdinaryTimer_Reset(OrdinaryTimer * this);
+int OrdinaryTimer_If_Reset(OrdinaryTimer * this);
+int OrdinaryTimer_If_Counting(OrdinaryTimer * this);
+int OrdinaryTimer_If_AC(OrdinaryTimer * this);
+void OrdinaryTimer_SetCycle_ms(OrdinaryTimer * this, float time_ms);
 
 // PWM定时器
-void TimerEp_PwmTimer_SetCompare(PwmTimer * this, int compare);
-void TimerEp_PwmTimer_SetCompareRate(PwmTimer * this, float rate);
-void TimerEp_PwmTimer_SetCompareTime(PwmTimer * this, float time);
-int TimerEp_PwmTimer_GetCompare(PwmTimer * this);
-float TimerEp_PwmTimer_GetCompareRate(PwmTimer * this);
-float TimerEp_PwmTimer_GetCompareTime(PwmTimer * this);
+void PwmTimer_SetCompare(PwmTimer * this, int compare);
+void PwmTimer_SetCompareRate(PwmTimer * this, float rate);
+void PwmTimer_SetCompareTime(PwmTimer * this, float time);
+int PwmTimer_GetCompare(PwmTimer * this);
+float PwmTimer_GetCompareRate(PwmTimer * this);
+float PwmTimer_GetCompareTime(PwmTimer * this);
 
 // 捕获定时器
-void TimerEp_CaptureTimer_TriggerUp(CaptureTimer * this);
-void TimerEp_CaptureTimer_TriggerDown(CaptureTimer * this);
-volatile int TimerEp_CaptureTimer_ReadUpEdge(CaptureTimer * this);
-volatile int TimerEp_CaptureTimer_ReadDownEdge(CaptureTimer * this);
-HAL_TIM_ActiveChannel TimerEp_CaptureTimer_GetActiveChannel(CaptureTimer * this);
+void CaptureTimer_TriggerUp(CaptureTimer * this);
+void CaptureTimer_TriggerDown(CaptureTimer * this);
+volatile int CaptureTimer_ReadChannel_1(CaptureTimer * this);
+volatile int CaptureTimer_ReadChannel_2(CaptureTimer * this);
+HAL_TIM_ActiveChannel CaptureTimer_GetActiveChannel(CaptureTimer * this);
+void CaptureTimer_AutoSetChannel_1(CaptureTimer * this);
+void CaptureTimer_AutoSetChannel_2(CaptureTimer * this);
+void CaptureTimer_AutoSetChannel_both(CaptureTimer * this);
+int CaptureTimer_GetCounter_Channel_1(CaptureTimer * this);
+int CaptureTimer_GetCounter_Channel_2(CaptureTimer * this);
 
 
 #endif // __TIMER_EP_H

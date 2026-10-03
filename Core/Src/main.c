@@ -20,9 +20,7 @@
 #include "main.h"
 #include "dma.h"
 #include "i2c.h"
-#include "stm32f103xb.h"
 #include "stm32f1xx_hal_tim.h"
-#include "stm32f1xx_hal_uart.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
@@ -33,7 +31,6 @@
 #include "oled.h"
 #include "font.h"
 #include "timer_ep.h"
-#include <stdint.h>
 #include <stdio.h>
 #include <sys/_intsup.h>
 #include "bluetooth.h"
@@ -53,11 +50,6 @@
 
 // HC-SR04的触发用时
 #define TRIG_DURATION_ms 0.01f
-
-// 通讯协议
-#define FRAME_HEADER_1 0xAA
-#define FRAME_HEADER_2 0x55
-#define FRAME_END 0x0D
 
 /* USER CODE END PD */
 
@@ -79,21 +71,11 @@ volatile int OLED_REFRESH_REQUEST = 0;             // 请求OLED屏幕刷新标�
 volatile int BT_TX_CPLX = 1;                       // 蓝牙串口发送完成标志位
 volatile int BT_RX_CPLX = 1;                       // 蓝牙串口接收完成标志位
 
-// 用于捕获定时器的变量
-volatile int upEdge_counter = 0;                   // 上升沿所对应的计数器值
-volatile int downEdge_counter = 0;                 // 下降沿所对应的计数器值
-
-// 用于PWM控制的变量
-volatile int autoCompare = 0;                               // PWM计时器的compare值
-volatile int autoCompare_multiplier = 1;                    // autoCompare的乘数 (1 或 -1)
-volatile int autoCompare_step = 1;                          // PWM的autoCompare步进
-
 // 冷却时间
 volatile float cooling_time_ms = 30.0f;
 
 // 蓝牙串口
-uint8_t bluetooth_receiveData[20] = {0};
-Usart * Usart_bluetooth = NULL;
+Usart * BlueTooth = NULL;
 
 // LED小灯
 LED * LedRed   = NULL;
@@ -125,24 +107,28 @@ float calc_distance_mm(int up_edge_number, int down_edge_number)
 }
 
 
-/*自动计算TIM4的下一个compare值并返回它*/
-void autoCompare_next(void)
+/*PWM控制算法。自动计算TIM4的下一个compare值并返回它*/
+volatile int compare_multiplier = 1; // Compare的乘数 (1 或 -1)
+volatile int compare_step = 1;       // PWM的autoCompare步进
+
+int next_compare(PwmTimer * this)
 {
+  int Compare = PwmTimer_GetCompare(this);
   // 钳制autoCompare，同时计算其乘数的值
-  int ARR = TimerEp_GetArr((Timer*)ServoPwm_Timer);
-  int autoCompare_max = (int)(ARR * 0.125f + 0.5f); // 向上取整+0.5
-  int autoCompare_min = (int)(ARR * 0.025f + 0.5f);
-  if (autoCompare >= autoCompare_max) {
-    autoCompare = autoCompare_max;
-    autoCompare_multiplier = -1;
+  int ARR = TimerEp_GetArr((Timer*)this);
+  int Compare_max = (int)(ARR * 0.125f + 0.5f); // 向上取整+0.5
+  int Compare_min = (int)(ARR * 0.025f + 0.5f);
+
+  if (Compare >= Compare_max) {
+    Compare = Compare_max;
+    compare_multiplier = -1;
   }
-  else if (autoCompare <= autoCompare_min) {
-    autoCompare = autoCompare_min;
-    autoCompare_multiplier = 1;
+  else if (Compare <= Compare_min) {
+    Compare = Compare_min;
+    compare_multiplier = 1;
   }
 
-  // 计算autoCompare。由于它是全局变量所以不需要返回值
-  autoCompare += (autoCompare_multiplier * autoCompare_step);
+  return (Compare + compare_multiplier * compare_step);
 }
 
 
@@ -170,7 +156,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   // TIM3的us级计时
   if (htim->Instance == TimerEp_GetInstance((Timer*)MainCycle_Timer)) {
-    TimerEp_OrdinaryTimer_CountDown(MainCycle_Timer);
+    OrdinaryTimer_CountDown(MainCycle_Timer);
   } 
 
   // TIM2的OLED展示
@@ -187,11 +173,10 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
   // TIM1捕获上升和下降沿
   if ( htim->Instance == TimerEp_GetInstance((Timer*)Capture_Timer)
-       && htim->Channel == TimerEp_CaptureTimer_GetActiveChannel(Capture_Timer)
+       && htim->Channel == CaptureTimer_GetActiveChannel(Capture_Timer)
        && StateMachine == MEASURING )
   {
-    upEdge_counter = TimerEp_CaptureTimer_ReadUpEdge(Capture_Timer);
-    downEdge_counter = TimerEp_CaptureTimer_ReadDownEdge(Capture_Timer);
+    CaptureTimer_AutoSetChannel_both(Capture_Timer);
     StateMachine = PROCESSING;
     // $03: call
   }
@@ -248,7 +233,7 @@ int main(void)
 
 
   // 实例化定时器
-  Capture_Timer = TimerEp_CaptureTimer_Instantiate(
+  Capture_Timer = CaptureTimer_Instantiate(
     &htim1,
     72,
     HC_SR04_Trig_GPIO_Port,
@@ -258,17 +243,17 @@ int main(void)
     HAL_TIM_ACTIVE_CHANNEL_4
   );
 
-  OledCycle_Timer = TimerEp_OrdinaryTimer_Instantiate(
+  OledCycle_Timer = OrdinaryTimer_Instantiate(
     &htim2,
     72
   );
 
-  MainCycle_Timer = TimerEp_OrdinaryTimer_Instantiate(
+  MainCycle_Timer = OrdinaryTimer_Instantiate(
     &htim3,
     72
   );
 
-  ServoPwm_Timer = TimerEp_PwmTimer_Instantiate(
+  ServoPwm_Timer = PwmTimer_Instantiate(
     &htim4,
     72,
     TIM_CHANNEL_3
@@ -277,11 +262,10 @@ int main(void)
   // 实例化蓝牙串口
   extern DMA_HandleTypeDef hdma_usart3_rx;
   extern DMA_HandleTypeDef hdma_usart3_tx;
-  Usart_bluetooth = Usart_Instantiate(
+  BlueTooth = Usart_Instantiate(
     &huart3,
     &hdma_usart3_rx,
-    &hdma_usart3_tx,
-    bluetooth_receiveData
+    &hdma_usart3_tx
   );
   /* ---------------------------------------- */
 
@@ -336,7 +320,7 @@ int main(void)
     {
       case IDLE:
         // 阻止HC-SR04在IDLE状态下工作
-        TimerEp_CaptureTimer_TriggerDown(Capture_Timer);
+        CaptureTimer_TriggerDown(Capture_Timer);
 
         // 启动时暂停
         LED_off(LedGreen);
@@ -349,18 +333,17 @@ int main(void)
         ENABLE_OLED = 0;
 
         // 允许状态机步进
-        TimerEp_OrdinaryTimer_Reset(MainCycle_Timer);
+        OrdinaryTimer_Reset(MainCycle_Timer);
 
         // 启动时将舵机置于0度
-        TimerEp_PwmTimer_SetCompareRate(ServoPwm_Timer, 0.025);
+        PwmTimer_SetCompareRate(ServoPwm_Timer, 0.025);
         StateMachine = TRIG_UP_AND_DOWN;
 
         // 启用蓝牙发送和接收
         BT_TX_CPLX = 1;
 
         // 等待命令
-        HAL_UARTEx_ReceiveToIdle_DMA(Usart_bluetooth->huart, Usart_bluetooth->receive_data_p, 20);
-        __HAL_DMA_DISABLE_IT(Usart_bluetooth->DMA_handle_rx, DMA_IT_HT); // 禁止半传输中断
+        Usart_ReceiveToIdle_DMA_noHT(BlueTooth);
 
         HAL_Delay(500);
         break;
@@ -371,12 +354,12 @@ int main(void)
         if (PAUSE == 1) break;
 
         // 正在倒计时
-        if (TimerEp_OrdinaryTimer_If_Counting(MainCycle_Timer)) break;
+        if (OrdinaryTimer_If_Counting(MainCycle_Timer)) break;
         
         // 刚进入此状态
-        if (TimerEp_OrdinaryTimer_If_Reset(MainCycle_Timer)) {
-          TimerEp_CaptureTimer_TriggerUp(Capture_Timer);
-          TimerEp_OrdinaryTimer_SetCycle_ms(MainCycle_Timer, TRIG_DURATION_ms);
+        if (OrdinaryTimer_If_Reset(MainCycle_Timer)) {
+          CaptureTimer_TriggerUp(Capture_Timer);
+          OrdinaryTimer_SetCycle_ms(MainCycle_Timer, TRIG_DURATION_ms);
           // $01 call
         }
         break;
@@ -388,29 +371,31 @@ int main(void)
 
       case PROCESSING:
       // $03: callback
-        distance = calc_distance_mm(upEdge_counter, downEdge_counter);
-        angle = (TimerEp_PwmTimer_GetCompareRate(ServoPwm_Timer) - 0.025) * 10 * 180;
+        distance = calc_distance_mm(
+          CaptureTimer_GetCounter_Channel_1(Capture_Timer),
+          CaptureTimer_GetCounter_Channel_2(Capture_Timer)
+        );
+        angle = (PwmTimer_GetCompareRate(ServoPwm_Timer) - 0.025) * 10 * 180;
         if (OLED_REFRESH_REQUEST == 1 && ENABLE_OLED == 1 ) print_auto_OLED(distance, angle);
         StateMachine = ROTATE;
         break;
 
 
       case ROTATE:
-        autoCompare_next();
-        TimerEp_PwmTimer_SetCompare(ServoPwm_Timer, autoCompare);
-        TimerEp_OrdinaryTimer_Reset(MainCycle_Timer);
+        PwmTimer_SetCompare(ServoPwm_Timer, next_compare(ServoPwm_Timer));
+        OrdinaryTimer_Reset(MainCycle_Timer);
         StateMachine = COOLING;
         break;
 
         
       case COOLING:
         // 正在计数
-        if ( TimerEp_OrdinaryTimer_If_Counting(MainCycle_Timer) ) break;
+        if ( OrdinaryTimer_If_Counting(MainCycle_Timer) ) break;
 
         // 刚进入COOLING
-        if ( TimerEp_OrdinaryTimer_If_Reset(MainCycle_Timer) ) {
+        if ( OrdinaryTimer_If_Reset(MainCycle_Timer) ) {
           send_auto_bluetooth(distance, angle);
-          TimerEp_OrdinaryTimer_SetCycle_ms(MainCycle_Timer, cooling_time_ms);
+          OrdinaryTimer_SetCycle_ms(MainCycle_Timer, cooling_time_ms);
         }
         break;
         // $04 call
@@ -418,18 +403,18 @@ int main(void)
 
 
     // $01 callback
-    if ( StateMachine == TRIG_UP_AND_DOWN && TimerEp_OrdinaryTimer_If_AC(MainCycle_Timer) ) {
-        TimerEp_CaptureTimer_TriggerDown(Capture_Timer);
+    if ( StateMachine == TRIG_UP_AND_DOWN && OrdinaryTimer_If_AC(MainCycle_Timer) ) {
+        CaptureTimer_TriggerDown(Capture_Timer);
         TimerEp_SetCounter((Timer *)Capture_Timer, 0); // 将TIM1清零，防止测量时自动重装载
-        TimerEp_OrdinaryTimer_Reset(MainCycle_Timer);
+        OrdinaryTimer_Reset(MainCycle_Timer);
         StateMachine = MEASURING;
         // $02: call
     }
 
 
     // $04 callback
-    if ( StateMachine == COOLING && TimerEp_OrdinaryTimer_If_AC(MainCycle_Timer) ) {
-      TimerEp_OrdinaryTimer_Reset(MainCycle_Timer);
+    if ( StateMachine == COOLING && OrdinaryTimer_If_AC(MainCycle_Timer) ) {
+      OrdinaryTimer_Reset(MainCycle_Timer);
       StateMachine = TRIG_UP_AND_DOWN;
     }
     /* USER CODE END WHILE */
