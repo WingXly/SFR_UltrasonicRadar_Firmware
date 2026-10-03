@@ -1,3 +1,11 @@
+/**
+ * @file timer_ep.c
+ * @brief 定时器的面向对象封装
+ * @anchor WingXly
+ * @version 1.0
+ * @date 2026-10-03
+ * @license MIT License
+ */
 #include "timer_ep.h"
 #include "stm32f1xx_hal_tim.h"
 #include <stdint.h>

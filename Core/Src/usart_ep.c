@@ -1,3 +1,11 @@
+/**
+ * @file usart_ep.c
+ * @brief 串口的面向对象封装
+ * @anchor WingXly
+ * @version 1.0
+ * @date 2026-10-03
+ * @license MIT License
+ */
 #include "usart_ep.h"
 #include "stm32f1xx_hal_def.h"
 #include <stdint.h>
@@ -10,6 +18,8 @@ struct Usart {
     DMA_HandleTypeDef * DMA_handle_rx;
     DMA_HandleTypeDef * DMA_handle_tx;
     uint8_t receive_data[20];
+    int TX_CPLT;
+    int RX_CPLT;
 };
 
 
@@ -20,12 +30,15 @@ Usart * Usart_Instantiate(  UART_HandleTypeDef * huart,
 {
     Usart * this = malloc(sizeof(Usart));
     if (!this) return NULL;
-    this->huart = huart;
-    this->DMA_handle_rx = DMA_handle_rx;
-    this->DMA_handle_tx = DMA_handle_tx;
+    this -> huart = huart;
+    this -> DMA_handle_rx = DMA_handle_rx;
+    this -> DMA_handle_tx = DMA_handle_tx;
     memset(&this->receive_data, 0, sizeof(this->receive_data));
+    this -> TX_CPLT = 1;
+    this -> RX_CPLT = 1;
     return this;
 }
+
 void Usart_Free(Usart * this) { free(this); }
 
 
@@ -40,6 +53,42 @@ uint8_t * Usart_pReceiveData(Usart * this)
 UART_HandleTypeDef * Usart_pHuart(Usart * this)
 {
     return this->huart;
+}
+
+
+/*检测Usart是否接收完成*/
+int Usart_If_RxCplt(Usart * this)
+{
+    return this->RX_CPLT;
+}
+
+
+/*检测Usart是否发送完成*/
+int Usart_If_TxCplt(Usart * this)
+{
+    return this->TX_CPLT;
+}
+
+
+/*将Usart标记为接收完成或未完成*/
+void Usart_Mark_RxCplt(Usart * this, int Cplt)
+{
+    if (Cplt == 0) {
+        this->RX_CPLT = 0;
+    } else {
+        this->RX_CPLT = 1;
+    }
+}
+
+
+/*将Usart标记为发送完成或未完成*/
+void Usart_Mark_TxCplt(Usart * this, int Cplt)
+{
+    if (Cplt == 0) {
+        this->TX_CPLT = 0;
+    } else {
+        this->TX_CPLT = 1;
+    }
 }
 
 

@@ -20,6 +20,7 @@
 #include "main.h"
 #include "dma.h"
 #include "i2c.h"
+#include "stm32f1xx_hal_def.h"
 #include "stm32f1xx_hal_tim.h"
 #include "tim.h"
 #include "usart.h"
@@ -64,12 +65,10 @@
 
 volatile StateMachine_TypeDef StateMachine = INIT; // 状态机
 
-volatile int PAUSE_REQUEST = 0;                           // 是否暂停（IDLE默认暂停）
+volatile int PAUSE_REQUEST = 0;                    // 是否暂停（IDLE默认暂停）
 volatile int ENABLE_OLED = -1;                     // 是否启用OLED输出（IDLE默认不启用）
 
 volatile int OLED_REFRESH_REQUEST = 0;             // 请求OLED屏幕刷新标志位
-volatile int BT_TX_CPLX = 1;                       // 蓝牙串口发送完成标志位
-volatile int BT_RX_CPLX = 1;                       // 蓝牙串口接收完成标志位
 
 // 冷却时间
 volatile float cooling_time_ms = 30.0f;
@@ -312,7 +311,8 @@ int main(void)
         PwmTimer_SetCompareRate(ServoPwm_Timer, 0.025);
 
         // 启用蓝牙发送和接收
-        BT_TX_CPLX = 1;
+        Usart_Mark_RxCplt(BlueTooth, 1);
+        Usart_Mark_TxCplt(BlueTooth, 1);
 
         // 等待命令
         Usart_ReceiveToIdle_DMA_noHT(BlueTooth);
@@ -338,7 +338,7 @@ int main(void)
         // event: 按按钮（KEY2）启用或禁用OLED输出
         if (KEY2_IS_PRESSED()) {
           HAL_Delay(10);
-          if (KEY2_IS_PRESSED() && ENABLE_OLED != -1) {
+          if (KEY2_IS_PRESSED()) {
             LED_toggle(LedBlue);
             ENABLE_OLED = 1 - ENABLE_OLED;
 
@@ -374,6 +374,7 @@ int main(void)
 
 
       case MEASURING:
+        Error_Handler();
         break;
 
 

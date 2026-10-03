@@ -8,7 +8,6 @@
 
 /* 以下变量定义在 main.c 中*/
 extern Usart * BlueTooth;
-extern volatile int BT_TX_CPLX;
 extern volatile int PAUSE_REQUEST;
 extern volatile int ENABLE_OLED;
 extern int compare_step;
@@ -23,7 +22,7 @@ extern LED * LedBlue;
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart == Usart_pHuart(BlueTooth)) {
-        BT_TX_CPLX = 1;
+        Usart_Mark_TxCplt(BlueTooth, 1);
     }
 }
 
@@ -49,7 +48,7 @@ uint8_t sendMsg[9]:
 */
 void send_auto_bluetooth(float distance_mm, float angle_deg)
 {
-    if (BT_TX_CPLX == 0) return;
+    if ( !Usart_If_TxCplt(BlueTooth) ) return;
     static uint8_t sendMsg[9] = "";
 
     sendMsg[0] = FRAME_HEADER_1;
@@ -64,7 +63,7 @@ void send_auto_bluetooth(float distance_mm, float angle_deg)
     sendMsg[7] = sendMsg[2] ^ sendMsg[3] ^ sendMsg[4] ^ sendMsg[5] ^ sendMsg[6]; // 校验
     sendMsg[8] = FRAME_END;                              // 帧尾
 
-    BT_TX_CPLX = 0;
+    Usart_Mark_TxCplt(BlueTooth, 0);
     Usart_Transmit_DMA_noHT(BlueTooth, sendMsg, 9);
     // $05: call
 }
@@ -188,6 +187,6 @@ void command_handler_2para(uint16_t cmd_type, uint16_t para1, uint16_t para2)
 void send_error_bluetooth()
 {
     static char sendMsg[50] = "Error";
-    BT_TX_CPLX = 0;
+    Usart_Mark_TxCplt(BlueTooth, 0);
     Usart_Transmit_DMA_noHT(BlueTooth, (uint8_t*)sendMsg, strlen(sendMsg));
 }
