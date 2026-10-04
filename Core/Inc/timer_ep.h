@@ -50,6 +50,9 @@ void PwmTimer_SetCompareTime(PwmTimer * this, float time);
 int PwmTimer_GetCompare(PwmTimer * this);
 float PwmTimer_GetCompareRate(PwmTimer * this);
 float PwmTimer_GetCompareTime(PwmTimer * this);
+float PwmTimer_AutoServoAngle_Linear(   PwmTimer * this,
+                                        float minDuty_percent, float maxDuty_percent,
+                                        float minAngle_degree, float maxAngle_degree );
 
 // 捕获定时器
 void CaptureTimer_TriggerUp(CaptureTimer * this);

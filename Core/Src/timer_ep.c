@@ -39,6 +39,7 @@ struct CaptureTimer {
     HAL_TIM_ActiveChannel capture_active_channel;
     volatile int capture_count_1;
     volatile int capture_count_2;
+    volatile int CAPTURE_DONE;
 };
 
 
@@ -94,6 +95,7 @@ CaptureTimer * CaptureTimer_Instantiate(TIM_HandleTypeDef * htim,
     this -> timer_base.period = TimerEp_GetPeriod((Timer *)this);
     this -> capture_count_1 = 0;
     this -> capture_count_2 = 0;
+    this -> CAPTURE_DONE = 0;
     return this;
 }
 
@@ -270,6 +272,18 @@ float PwmTimer_GetCompareRate(PwmTimer * this)
 float PwmTimer_GetCompareTime(PwmTimer * this)
 {
     return ( PwmTimer_GetCompareRate(this) * this->timer_base.period );
+}
+
+
+/*自动计算并返回一个PWM舵机的角度（将this用于驱动此舵机）（采用线性算法）*/
+float PwmTimer_AutoServoAngle_Linear(   PwmTimer * this,
+                                        float minDuty_percent, float maxDuty_percent,
+                                        float minAngle_degree, float maxAngle_degree )
+{
+    float duty = PwmTimer_GetCompareRate(this);
+    float minDuty = minDuty_percent / 100;
+    float maxDuty = maxDuty_percent / 100;
+    return ( minAngle_degree + (duty - minDuty) / (maxDuty - minDuty) * (maxAngle_degree - minAngle_degree) );
 }
 
 

@@ -92,16 +92,12 @@ PwmTimer      * ServoPwm_Timer  = NULL;
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
-/* USER CODE END PFP */
-
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
 
 /*根据TIM1捕获计算距离*/
 float calc_distance_mm(int up_edge_number, int down_edge_number)
 {
   return (
-    ( (float)down_edge_number - (float)up_edge_number ) * (float)SPEED_OF_SOUND_m_s / 2000.0f
+    (float)(down_edge_number - up_edge_number) * (float)SPEED_OF_SOUND_m_s / 2000.0f
   );
 }
 
@@ -145,9 +141,10 @@ void print_auto_OLED(float distance, float angle)
 }
 
 
+/* USER CODE END PFP */
 
-/*----------------------------------------------------------------------------------------------------*/
-
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
 
 
 /*计时器自动重装载回调函数*/
@@ -180,6 +177,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
     // $03: call
   }
 }
+
 
 /* USER CODE END 0 */
 
@@ -358,9 +356,6 @@ int main(void)
 
 
       case TRIG_UP_AND_DOWN:
-        // 在暂停时,将状态机卡在TRIG_UP_AND_DOWN
-        if (PAUSE_REQUEST == 1) break;
-
         // 正在倒计时
         if (OrdinaryTimer_If_Counting(MainCycle_Timer)) break;
         
@@ -374,7 +369,6 @@ int main(void)
 
 
       case MEASURING:
-        Error_Handler();
         break;
 
 
@@ -384,7 +378,11 @@ int main(void)
           CaptureTimer_GetCounter_Channel_1(Capture_Timer),
           CaptureTimer_GetCounter_Channel_2(Capture_Timer)
         );
-        angle = (PwmTimer_GetCompareRate(ServoPwm_Timer) - 0.025) * 10 * 180;
+        angle = PwmTimer_AutoServoAngle_Linear(
+          ServoPwm_Timer,
+          2.5f, 12.5f,
+          0.0f, 180.0f
+        );
         if (OLED_REFRESH_REQUEST == 1 && ENABLE_OLED == 1 ) print_auto_OLED(distance, angle);
         StateMachine = ROTATE;
         break;
