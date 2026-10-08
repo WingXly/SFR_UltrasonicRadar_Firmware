@@ -212,7 +212,7 @@ int OrdinaryTimer_If_Counting(OrdinaryTimer * this)
 
 
 /*检测一个普通定时器是否已经归零*/
-int OrdinaryTimer_If_AC(OrdinaryTimer * this)
+int OrdinaryTimer_If_CountCplx(OrdinaryTimer * this)
 {
     if (this->cycle == 0 && this->AC_flag == 1) {
         return 1;
@@ -281,9 +281,9 @@ float PwmTimer_GetCompareTime(PwmTimer * this)
 
 
 /*自动计算并返回一个PWM舵机的角度（将this用于驱动此舵机）（采用线性算法）*/
-float PwmTimer_ServoAngle_Auto_Linear_ForthAndBack(   PwmTimer * this,
-                                        float minDuty_percent, float maxDuty_percent,
-                                        float angleRange_degree )
+float PwmTimer_GetCompare_AsServoAngle( PwmTimer * this,
+                                                    float minDuty_percent, float maxDuty_percent,
+                                                    float angleRange_degree )
 {
     float duty = PwmTimer_GetCompareRate(this);
     float minDuty = minDuty_percent / 100;
@@ -297,7 +297,7 @@ int PwmTimer_NextCompare_Linear(PwmTimer * this,
                                 float minDuty_percent, float maxDuty_percent )
 {
   int Compare = PwmTimer_GetCompare(this);
-  // 钳制autoCompare，同时计算其乘数的值
+  // 钳制Compare，同时计算其乘数的值
   int ARR = TimerEp_GetArr((Timer*)this);
   int Compare_max = (int)(ARR * maxDuty_percent/100 + 0.5f); // 向上取整+0.5
   int Compare_min = (int)(ARR * minDuty_percent/100 + 0.5f);

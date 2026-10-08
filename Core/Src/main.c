@@ -61,6 +61,7 @@
 // PWM舵机的角度范围
 #define PWMSERVO_ANGLE_RANGE 180.0f
 
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -123,6 +124,34 @@ void print_auto_OLED(float distance, float angle)
   sprintf(printMsg_angle, "a = %.2f", angle);
   OLED_PrintString(0, 16, printMsg_angle, &font16x16, OLED_COLOR_NORMAL);
   OLED_ShowFrame();
+}
+
+
+struct AutoCompare_TypeDef {
+  int compare;
+  int multiplier;
+  int step;
+  int compare_min; int compare_max;
+} auto_compare = {
+  50,
+  1,
+  1,
+  50, 250
+};
+
+
+int AutoCompare_next(struct AutoCompare_TypeDef this)
+{
+  if (this.compare >= this.compare_max) {
+    this.compare = this.compare_max;
+    this.multiplier = -1;
+  }
+  else if (this.compare <= this.compare_min) {
+    this.compare = this.compare_min;
+    this.multiplier = 1;
+  }
+  this.compare += this.multiplier * this.step;
+  return this.compare;
 }
 
 
@@ -342,7 +371,7 @@ int main(void)
           OLED_NewFrame();
           OLED_ShowFrame();
         }
-        else if (OLED_REFRESH_REQUEST == 1 && ENABLE_OLED == 1 ) {
+        else if (OLED_REFRESH_REQUEST == 1 && ENABLE_OLED == 1) {
           print_auto_OLED(distance, angle);
         }
 
@@ -357,11 +386,18 @@ int main(void)
         // 正在倒计时
         if (OrdinaryTimer_If_Counting(MainCycle_Timer)) break;
         
-        // 刚进入此状态
+        // 刚进入此状态，开始倒计时
         if (OrdinaryTimer_If_Reset(MainCycle_Timer)) {
           CaptureTimer_TriggerUp(Capture_Timer);
           OrdinaryTimer_SetCycle_ms(MainCycle_Timer, TRIG_DURATION_ms);
-          // $01 call
+        }
+
+        // 倒计时完毕
+        if (OrdinaryTimer_If_CountCplx(MainCycle_Timer)) {
+          CaptureTimer_TriggerDown(Capture_Timer);
+          TimerEp_SetCounter((Timer *)Capture_Timer, 0); // 将TIM1清零，防止测量时自动重装载
+          OrdinaryTimer_Reset(MainCycle_Timer);
+          StateMachine = MEASURING;
         }
         break;
 
@@ -376,7 +412,7 @@ int main(void)
           CaptureTimer_LoadCounter_1(Capture_Timer),
           CaptureTimer_LoadCounter_2(Capture_Timer)
         );
-        angle = PwmTimer_ServoAngle_Auto_Linear_ForthAndBack(
+        angle = PwmTimer_GetCompare_AsServoAngle(
           ServoPwm_Timer,
           PWMSERVO_MINDUTY_PERCENT,
           PWMSERVO_MAXDUTY_PERCENT,
@@ -387,10 +423,9 @@ int main(void)
 
 
       case ROTATE:
-        PwmTimer_SetCompare_Auto_Linear_ForthAndBack(
+        PwmTimer_SetCompare(
           ServoPwm_Timer,
-          PWMSERVO_MINDUTY_PERCENT,
-          PWMSERVO_MAXDUTY_PERCENT
+          AutoCompare_next(auto_compare)
         );
         OrdinaryTimer_Reset(MainCycle_Timer);
         StateMachine = COOLING;
@@ -398,34 +433,24 @@ int main(void)
 
         
       case COOLING:
-        // 正在计数
-        if ( OrdinaryTimer_If_Counting(MainCycle_Timer) ) break;
+        // 正在倒计时
+        if (OrdinaryTimer_If_Counting(MainCycle_Timer)) break;
 
-        // 刚进入COOLING
-        if ( OrdinaryTimer_If_Reset(MainCycle_Timer) ) {
+        // 刚进入COOLING，开始倒计时
+        if (OrdinaryTimer_If_Reset(MainCycle_Timer)) {
           send_auto_bluetooth(distance, angle);
           OrdinaryTimer_SetCycle_ms(MainCycle_Timer, cooling_time_ms);
+        }
+
+        // 倒计时完毕
+        if (OrdinaryTimer_If_CountCplx(MainCycle_Timer)) {
+          OrdinaryTimer_Reset(MainCycle_Timer);
+          StateMachine = PAUSE_AND_EVENT_HANDLE;
         }
         break;
         // $04 call
     }
 
-
-    // $01 callback
-    if ( StateMachine == TRIG_UP_AND_DOWN && OrdinaryTimer_If_AC(MainCycle_Timer) ) {
-        CaptureTimer_TriggerDown(Capture_Timer);
-        TimerEp_SetCounter((Timer *)Capture_Timer, 0); // 将TIM1清零，防止测量时自动重装载
-        OrdinaryTimer_Reset(MainCycle_Timer);
-        StateMachine = MEASURING;
-        // $02: call
-    }
-
-
-    // $04 callback
-    if ( StateMachine == COOLING && OrdinaryTimer_If_AC(MainCycle_Timer) ) {
-      OrdinaryTimer_Reset(MainCycle_Timer);
-      StateMachine = PAUSE_AND_EVENT_HANDLE;
-    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

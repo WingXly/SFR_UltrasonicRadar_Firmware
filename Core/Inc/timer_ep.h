@@ -41,7 +41,7 @@ void OrdinaryTimer_CountDown(OrdinaryTimer * this);
 void OrdinaryTimer_Reset(OrdinaryTimer * this);
 int OrdinaryTimer_If_Reset(OrdinaryTimer * this);
 int OrdinaryTimer_If_Counting(OrdinaryTimer * this);
-int OrdinaryTimer_If_AC(OrdinaryTimer * this);
+int OrdinaryTimer_If_CountCplx(OrdinaryTimer * this);
 void OrdinaryTimer_SetCycle_ms(OrdinaryTimer * this, float time_ms);
 
 // PWM定时器
@@ -51,9 +51,9 @@ void PwmTimer_SetCompareTime(PwmTimer * this, float time);
 int PwmTimer_GetCompare(PwmTimer * this);
 float PwmTimer_GetCompareRate(PwmTimer * this);
 float PwmTimer_GetCompareTime(PwmTimer * this);
-float PwmTimer_ServoAngle_Auto_Linear_ForthAndBack(   PwmTimer * this,
-                                        float minDuty_percent, float maxDuty_percent,
-                                        float angleRange_degree );
+float PwmTimer_GetCompare_AsServoAngle( PwmTimer * this,
+                                                    float minDuty_percent, float maxDuty_percent,
+                                                    float angleRange_degree );
 int PwmTimer_NextCompare_Linear(PwmTimer * this,
                                 float minDuty_percent, float maxDuty_percent );
 void PwmTimer_SetCompare_Auto_Linear_ForthAndBack(PwmTimer * this,
