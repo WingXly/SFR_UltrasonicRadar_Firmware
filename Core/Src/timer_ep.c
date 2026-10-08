@@ -28,6 +28,8 @@ struct PwmTimer {
     Timer timer_base;
     int PWM_compare;
     int PWM_generation_channel;
+    volatile int compare_multiplier;
+    volatile int compare_step;
 };
 
 struct CaptureTimer {
@@ -61,7 +63,8 @@ OrdinaryTimer * OrdinaryTimer_Instantiate(  TIM_HandleTypeDef * htim,
 /*创建一个PWM定时器*/
 PwmTimer * PwmTimer_Instantiate(TIM_HandleTypeDef * htim,
                                 float timer_clock_MHz,
-                                int PWM_generation_channel )
+                                int PWM_generation_channel,
+                                int compare_step )
 {
     PwmTimer * this = malloc(sizeof(PwmTimer));
     if (!this) return NULL;
@@ -70,6 +73,8 @@ PwmTimer * PwmTimer_Instantiate(TIM_HandleTypeDef * htim,
     this -> PWM_compare = 0;
     this -> PWM_generation_channel = PWM_generation_channel;
     this -> timer_base.period = TimerEp_GetPeriod((Timer *)this);
+    this -> compare_multiplier = 1;
+    this -> compare_step = compare_step;
     return this;
 }
 
@@ -276,14 +281,48 @@ float PwmTimer_GetCompareTime(PwmTimer * this)
 
 
 /*自动计算并返回一个PWM舵机的角度（将this用于驱动此舵机）（采用线性算法）*/
-float PwmTimer_AutoServoAngle_Linear(   PwmTimer * this,
+float PwmTimer_ServoAngle_Auto_Linear_ForthAndBack(   PwmTimer * this,
                                         float minDuty_percent, float maxDuty_percent,
-                                        float minAngle_degree, float maxAngle_degree )
+                                        float angleRange_degree )
 {
     float duty = PwmTimer_GetCompareRate(this);
     float minDuty = minDuty_percent / 100;
     float maxDuty = maxDuty_percent / 100;
-    return ( minAngle_degree + (duty - minDuty) / (maxDuty - minDuty) * (maxAngle_degree - minAngle_degree) );
+    return (duty - minDuty) / (maxDuty - minDuty) * (angleRange_degree);
+}
+
+
+/*PWM舵机的线性控制算法。自动计算TIM4的下一个compare值并返回它*/
+int PwmTimer_NextCompare_Linear(PwmTimer * this,
+                                float minDuty_percent, float maxDuty_percent )
+{
+  int Compare = PwmTimer_GetCompare(this);
+  // 钳制autoCompare，同时计算其乘数的值
+  int ARR = TimerEp_GetArr((Timer*)this);
+  int Compare_max = (int)(ARR * maxDuty_percent/100 + 0.5f); // 向上取整+0.5
+  int Compare_min = (int)(ARR * minDuty_percent/100 + 0.5f);
+
+  if (Compare >= Compare_max) {
+    Compare = Compare_max;
+    this -> compare_multiplier = -1;
+  }
+  else if (Compare <= Compare_min) {
+    Compare = Compare_min;
+    this -> compare_multiplier = 1;
+  }
+
+  return (Compare + this->compare_multiplier * this->compare_step);
+}
+
+
+/*自动设置PWM定时器的compare值（线性算法）*/
+void PwmTimer_SetCompare_Auto_Linear_ForthAndBack(PwmTimer * this,
+                                    float minDuty_percent, float maxDuty_percent )
+{
+    PwmTimer_SetCompare(
+        this,
+        PwmTimer_NextCompare_Linear(this, minDuty_percent, maxDuty_percent)
+    );
 }
 
 
@@ -305,14 +344,14 @@ void CaptureTimer_TriggerDown(CaptureTimer * this)
 
 
 /*读取捕获定时器的第一通道的count值*/
-volatile int CaptureTimer_ReadChannel_1(CaptureTimer * this)
+volatile int CaptureTimer_ReadCounter_1(CaptureTimer * this)
 {
     return ( HAL_TIM_ReadCapturedValue(this->timer_base.htim, this->capture_channel_1) );
 }
 
 
 /*读取捕获定时器的第二通道的count值*/
-volatile int CaptureTimer_ReadChannel_2(CaptureTimer * this)
+volatile int CaptureTimer_ReadCounter_2(CaptureTimer * this)
 {
     return ( HAL_TIM_ReadCapturedValue(this->timer_base.htim, this->capture_channel_2) );
 }
@@ -325,35 +364,37 @@ HAL_TIM_ActiveChannel CaptureTimer_GetActiveChannel(CaptureTimer * this)
 }
 
 
-/*设置捕获定时器第一通道计数值*/
-void CaptureTimer_AutoSetChannel_1(CaptureTimer * this)
+/*读取并保存捕获定时器第一通道计数值*/
+void CaptureTimer_SaveCounter_Auto_1(CaptureTimer * this)
 {
-    this->capture_count_1 = CaptureTimer_ReadChannel_1(this);
+    this->capture_count_1 = CaptureTimer_ReadCounter_1(this);
 }
 
 
-/*设置捕获定时器第二通道计数值*/
-void CaptureTimer_AutoSetChannel_2(CaptureTimer * this)
+/*读取并保存捕获定时器第二通道计数值*/
+void CaptureTimer_SaveCounter_Auto_2(CaptureTimer * this)
 {
-    this->capture_count_2 = CaptureTimer_ReadChannel_2(this);
+    this->capture_count_2 = CaptureTimer_ReadCounter_2(this);
 }
 
 
-/*同时设置捕获定时器两个通道的计数值*/
-void CaptureTimer_AutoSetChannel_both(CaptureTimer * this)
+/*同时保存捕获定时器两个通道的计数值*/
+void CaptureTimer_SaveCounter_both(CaptureTimer * this)
 {
-    CaptureTimer_AutoSetChannel_1(this);
-    CaptureTimer_AutoSetChannel_2(this);
+    CaptureTimer_SaveCounter_Auto_1(this);
+    CaptureTimer_SaveCounter_Auto_2(this);
 }
 
 
-int CaptureTimer_GetCounter_Channel_1(CaptureTimer * this)
+/*加载已保存的捕获定时器第一通道计数值*/
+int CaptureTimer_LoadCounter_1(CaptureTimer * this)
 {
     return this->capture_count_1;
 }
 
 
-int CaptureTimer_GetCounter_Channel_2(CaptureTimer * this)
+/*加载已保存的捕获定时器第二通道计数值*/
+int CaptureTimer_LoadCounter_2(CaptureTimer * this)
 {
     return this->capture_count_2;
 }

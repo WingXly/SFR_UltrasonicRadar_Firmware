@@ -10,6 +10,8 @@
 extern Usart * BlueTooth;
 extern volatile int PAUSE_REQUEST;
 extern volatile int ENABLE_OLED;
+extern volatile int OLED_CLEAR_REQUEST;
+extern volatile int OLED_REFRESH_REQUEST;
 extern int compare_step;
 extern float cooling_time_ms;
 extern LED * LedRed;
@@ -124,12 +126,14 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
         if (para == 0)      // 关闭OLED
         {
             ENABLE_OLED = 0;
+            OLED_CLEAR_REQUEST = 1;
             LED_off(LedBlue);
             
         }
         else if (para == 1) // 开启OLED
         {
             ENABLE_OLED = 1;
+            OLED_REFRESH_REQUEST = 1;
             LED_on(LedBlue);
         }
     }

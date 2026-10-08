@@ -52,6 +52,15 @@
 // HC-SR04的触发用时
 #define TRIG_DURATION_ms 0.01f
 
+// PWM舵机最小占空比
+#define PWMSERVO_MINDUTY_PERCENT 2.5f
+
+// PWM舵机最大占空比
+#define PWMSERVO_MAXDUTY_PERCENT 12.5f
+
+// PWM舵机的角度范围
+#define PWMSERVO_ANGLE_RANGE 180.0f
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -69,6 +78,7 @@ volatile int PAUSE_REQUEST = 0;                    // 是否暂停（IDLE默认�
 volatile int ENABLE_OLED = -1;                     // 是否启用OLED输出（IDLE默认不启用）
 
 volatile int OLED_REFRESH_REQUEST = 0;             // 请求OLED屏幕刷新标志位
+volatile int OLED_CLEAR_REQUEST = 0;               // 请求OLED屏幕清空标志位
 
 // 冷却时间
 volatile float cooling_time_ms = 30.0f;
@@ -99,31 +109,6 @@ float calc_distance_mm(int up_edge_number, int down_edge_number)
   return (
     (float)(down_edge_number - up_edge_number) * (float)SPEED_OF_SOUND_m_s / 2000.0f
   );
-}
-
-
-/*PWM控制算法。自动计算TIM4的下一个compare值并返回它*/
-volatile int compare_multiplier = 1; // Compare的乘数 (1 或 -1)
-volatile int compare_step = 1;       // PWM的autoCompare步进
-
-int next_compare(PwmTimer * this)
-{
-  int Compare = PwmTimer_GetCompare(this);
-  // 钳制autoCompare，同时计算其乘数的值
-  int ARR = TimerEp_GetArr((Timer*)this);
-  int Compare_max = (int)(ARR * 0.125f + 0.5f); // 向上取整+0.5
-  int Compare_min = (int)(ARR * 0.025f + 0.5f);
-
-  if (Compare >= Compare_max) {
-    Compare = Compare_max;
-    compare_multiplier = -1;
-  }
-  else if (Compare <= Compare_min) {
-    Compare = Compare_min;
-    compare_multiplier = 1;
-  }
-
-  return (Compare + compare_multiplier * compare_step);
 }
 
 
@@ -172,7 +157,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
        && htim->Channel == CaptureTimer_GetActiveChannel(Capture_Timer)
        && StateMachine == MEASURING )
   {
-    CaptureTimer_AutoSetChannel_both(Capture_Timer);
+    CaptureTimer_SaveCounter_both(Capture_Timer);
     StateMachine = PROCESSING;
     // $03: call
   }
@@ -253,7 +238,8 @@ int main(void)
   ServoPwm_Timer = PwmTimer_Instantiate(
     &htim4,
     72,
-    TIM_CHANNEL_3
+    TIM_CHANNEL_3,
+    1
   );
 
   // 实例化蓝牙串口
@@ -340,12 +326,24 @@ int main(void)
             LED_toggle(LedBlue);
             ENABLE_OLED = 1 - ENABLE_OLED;
 
-            OLED_NewFrame();
-            if (ENABLE_OLED) print_auto_OLED(distance, angle);
-            OLED_ShowFrame();
+            if (ENABLE_OLED) {
+              OLED_REFRESH_REQUEST = 1;
+            } else {
+              OLED_CLEAR_REQUEST = 1;
+            }
             
             while (KEY2_IS_PRESSED());
           }
+        }
+
+        // event: 清空或显示OLED
+        if (OLED_CLEAR_REQUEST) {
+          OLED_CLEAR_REQUEST = 0;
+          OLED_NewFrame();
+          OLED_ShowFrame();
+        }
+        else if (OLED_REFRESH_REQUEST == 1 && ENABLE_OLED == 1 ) {
+          print_auto_OLED(distance, angle);
         }
 
         // 如果不处于暂停，则进行下一步
@@ -375,21 +373,25 @@ int main(void)
       case PROCESSING:
       // $03: callback
         distance = calc_distance_mm(
-          CaptureTimer_GetCounter_Channel_1(Capture_Timer),
-          CaptureTimer_GetCounter_Channel_2(Capture_Timer)
+          CaptureTimer_LoadCounter_1(Capture_Timer),
+          CaptureTimer_LoadCounter_2(Capture_Timer)
         );
-        angle = PwmTimer_AutoServoAngle_Linear(
+        angle = PwmTimer_ServoAngle_Auto_Linear_ForthAndBack(
           ServoPwm_Timer,
-          2.5f, 12.5f,
-          0.0f, 180.0f
+          PWMSERVO_MINDUTY_PERCENT,
+          PWMSERVO_MAXDUTY_PERCENT,
+          PWMSERVO_ANGLE_RANGE
         );
-        if (OLED_REFRESH_REQUEST == 1 && ENABLE_OLED == 1 ) print_auto_OLED(distance, angle);
         StateMachine = ROTATE;
         break;
 
 
       case ROTATE:
-        PwmTimer_SetCompare(ServoPwm_Timer, next_compare(ServoPwm_Timer));
+        PwmTimer_SetCompare_Auto_Linear_ForthAndBack(
+          ServoPwm_Timer,
+          PWMSERVO_MINDUTY_PERCENT,
+          PWMSERVO_MAXDUTY_PERCENT
+        );
         OrdinaryTimer_Reset(MainCycle_Timer);
         StateMachine = COOLING;
         break;

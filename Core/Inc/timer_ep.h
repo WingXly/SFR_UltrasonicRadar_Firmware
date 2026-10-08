@@ -16,7 +16,8 @@ OrdinaryTimer * OrdinaryTimer_Instantiate(  TIM_HandleTypeDef * htim,
                                             float timer_clock_MHz );
 PwmTimer * PwmTimer_Instantiate(TIM_HandleTypeDef * htim,
                                 float timer_clock_MHz,
-                                int PWM_generation_channel );
+                                int PWM_generation_channel,
+                                int compare_step );
 CaptureTimer * CaptureTimer_Instantiate(TIM_HandleTypeDef * htim,
                                         float timer_clock_MHz,
                                         GPIO_TypeDef * trig_port,
@@ -50,21 +51,25 @@ void PwmTimer_SetCompareTime(PwmTimer * this, float time);
 int PwmTimer_GetCompare(PwmTimer * this);
 float PwmTimer_GetCompareRate(PwmTimer * this);
 float PwmTimer_GetCompareTime(PwmTimer * this);
-float PwmTimer_AutoServoAngle_Linear(   PwmTimer * this,
+float PwmTimer_ServoAngle_Auto_Linear_ForthAndBack(   PwmTimer * this,
                                         float minDuty_percent, float maxDuty_percent,
-                                        float minAngle_degree, float maxAngle_degree );
+                                        float angleRange_degree );
+int PwmTimer_NextCompare_Linear(PwmTimer * this,
+                                float minDuty_percent, float maxDuty_percent );
+void PwmTimer_SetCompare_Auto_Linear_ForthAndBack(PwmTimer * this,
+                                    float minDuty_percent, float maxDuty_percent );
 
 // 捕获定时器
 void CaptureTimer_TriggerUp(CaptureTimer * this);
 void CaptureTimer_TriggerDown(CaptureTimer * this);
-volatile int CaptureTimer_ReadChannel_1(CaptureTimer * this);
-volatile int CaptureTimer_ReadChannel_2(CaptureTimer * this);
+volatile int CaptureTimer_ReadCounter_1(CaptureTimer * this);
+volatile int CaptureTimer_ReadCounter_2(CaptureTimer * this);
 HAL_TIM_ActiveChannel CaptureTimer_GetActiveChannel(CaptureTimer * this);
-void CaptureTimer_AutoSetChannel_1(CaptureTimer * this);
-void CaptureTimer_AutoSetChannel_2(CaptureTimer * this);
-void CaptureTimer_AutoSetChannel_both(CaptureTimer * this);
-int CaptureTimer_GetCounter_Channel_1(CaptureTimer * this);
-int CaptureTimer_GetCounter_Channel_2(CaptureTimer * this);
+void CaptureTimer_SaveCounter_Auto_1(CaptureTimer * this);
+void CaptureTimer_SaveCounter_Auto_2(CaptureTimer * this);
+void CaptureTimer_SaveCounter_both(CaptureTimer * this);
+int CaptureTimer_LoadCounter_1(CaptureTimer * this);
+int CaptureTimer_LoadCounter_2(CaptureTimer * this);
 
 
 #endif // __TIMER_EP_H
