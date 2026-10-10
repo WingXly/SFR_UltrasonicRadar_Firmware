@@ -12,8 +12,9 @@ extern volatile int PAUSE;
 extern volatile int ENABLE_OLED;
 extern volatile int OLED_CLEAR_REQUEST;
 extern volatile int OLED_REFRESH_REQUEST;
-extern int compare_step;
-extern float cooling_time_ms;
+extern volatile float cooling_time_ms;
+extern volatile int MODIFY_STEP_OPT_TYPE;
+extern volatile int MODIFY_STEP_VALUE;
 extern LED * LedRed;
 extern LED * LedGreen;
 extern LED * LedBlue;
@@ -147,19 +148,9 @@ void command_handler_2para(uint16_t cmd_type, uint16_t para1, uint16_t para2)
 {
     if (cmd_type == 2)      // 设置 compare_step。将para一比一转换
     {
-        int compare_step_old = compare_step;
-        if (para1 == 1) {        // set
-            compare_step = para2;
-        } else if (para1 == 2) { // add
-            compare_step += para2;
-        } else if (para1 == 3) { // remove
-            compare_step -= para2;
-        }
-        
-        if (compare_step < 0 || compare_step > 250) {
-            compare_step = compare_step_old;
-            send_error_bluetooth();
-        }
+        // 只发送修改请求，具体修改逻辑在main()中实现
+        MODIFY_STEP_OPT_TYPE = para1;
+        MODIFY_STEP_VALUE = para2;
     }
     else if (cmd_type == 3) // 设置 cooling_time_ms。将para除以1000后转换
     {

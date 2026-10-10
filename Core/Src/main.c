@@ -53,10 +53,10 @@
 #define TRIG_DURATION_ms 0.01f
 
 // PWM舵机最小占空比
-#define PWMSERVO_MINDUTY_PERCENT 2.5f
+#define PWMSERVO_MIN_COMPARE 50
 
 // PWM舵机最大占空比
-#define PWMSERVO_MAXDUTY_PERCENT 12.5f
+#define PWMSERVO_MAX_COMPARE 250
 
 // PWM舵机的角度范围
 #define PWMSERVO_ANGLE_RANGE 180.0f
@@ -76,10 +76,13 @@
 volatile StateMachine_TypeDef StateMachine = INIT; // 状态机
 
 volatile int PAUSE = 0;                            // 是否暂停（IDLE默认暂停）
-volatile int ENABLE_OLED = -1;                     // 是否启用OLED输出（IDLE默认不启用）
+volatile int ENABLE_OLED = 0;                      // 是否启用OLED输出（IDLE默认不启用）
 
 volatile int OLED_REFRESH_REQUEST = 0;             // 请求OLED屏幕刷新标志位
 volatile int OLED_CLEAR_REQUEST = 0;               // 请求OLED屏幕清空标志位
+
+volatile int MODIFY_STEP_OPT_TYPE = 0;             // 修改step值的操作类型（1:set 2:add 3:remove）
+volatile int MODIFY_STEP_VALUE = 1;                // 修改step值的具体数字
 
 // 冷却时间
 volatile float cooling_time_ms = 30.0f;
@@ -114,7 +117,7 @@ float calc_distance_mm(int up_edge_number, int down_edge_number)
 
 
 /*将距离和角度输出在OLED上*/
-void print_auto_OLED(float distance, float angle)
+void print_sensor_data_on_oled(float distance, float angle)
 {
   OLED_NewFrame();
   char printMsg_distance[20] = "";
@@ -127,31 +130,42 @@ void print_auto_OLED(float distance, float angle)
 }
 
 
-struct AutoCompare_TypeDef {
+/*PwmServo_Timer的compare控制器*/
+ typedef struct {
   int compare;
   int multiplier;
   int step;
   int compare_min; int compare_max;
-} auto_compare = {
-  50,
-  1,
-  1,
-  50, 250
-};
+} AutoCompare_TypeDef;
 
-
-int AutoCompare_next(struct AutoCompare_TypeDef this)
+/*计算下一个compare值并返回计算结果*/
+int AutoCompare_next(AutoCompare_TypeDef * this)
 {
-  if (this.compare >= this.compare_max) {
-    this.compare = this.compare_max;
-    this.multiplier = -1;
+  if (this->compare >= this->compare_max) {
+    this->compare = this->compare_max;
+    this->multiplier = -1;
   }
-  else if (this.compare <= this.compare_min) {
-    this.compare = this.compare_min;
-    this.multiplier = 1;
+  else if (this->compare <= this->compare_min) {
+    this->compare = this->compare_min;
+    this->multiplier = 1;
   }
-  this.compare += this.multiplier * this.step;
-  return this.compare;
+  this->compare += this->multiplier * this->step;
+  return this->compare;
+}
+
+/*设置compare步进值（operation_type: set, add, remove）（不允许step为负数）*/
+void AutoCompare_setStep( AutoCompare_TypeDef * this,
+                          int operation_type, int value )
+{
+  if (operation_type == 1) {
+    this->step = value;
+  } else if (operation_type == 2) {
+    this->step += value;
+  } else if (operation_type == 3) {
+    this->step -= value;
+  }
+  
+  if (this->step < 0) this->step = 0;
 }
 
 
@@ -187,7 +201,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
        && StateMachine == MEASURING )
   {
     CaptureTimer_SaveCounter_both(Capture_Timer);
-    CaptureTimer_Mark_CaptureCplx(Capture_Timer, 1);
+    CaptureTimer_Mark_CaptureCplt(Capture_Timer, 1);
   }
 }
 
@@ -205,6 +219,14 @@ int main(void)
 
   float distance = 0;          // 距离（计算值）
   float angle = 0;             // 角度（计算值）
+  AutoCompare_TypeDef ac_ = {
+    .compare     = PWMSERVO_MIN_COMPARE,
+    .multiplier  = 1,
+    .step        = 1,
+    .compare_min = PWMSERVO_MIN_COMPARE,
+    .compare_max = PWMSERVO_MAX_COMPARE
+  };
+  AutoCompare_TypeDef * auto_compare = &ac_;
 
   /* USER CODE END 1 */
 
@@ -303,7 +325,7 @@ int main(void)
     switch (StateMachine)
     {
       case INIT:
-        // 阻止HC-SR04在IDLE状态下工作
+        // 阻止HC-SR04在INIT状态下工作
         CaptureTimer_TriggerDown(Capture_Timer);
 
         // 启动时暂停
@@ -313,14 +335,12 @@ int main(void)
 
         // 启动时不启用OLED输出
         LED_off(LedBlue);
-        OLED_REFRESH_REQUEST = 0;
-        ENABLE_OLED = 0;
 
         // 允许状态机步进
         OrdinaryTimer_Reset(MainCycle_Timer);
 
         // 启动时将舵机置于0度
-        PwmTimer_SetCompareRate(ServoPwm_Timer, 0.025);
+        PwmTimer_SetDuty(ServoPwm_Timer, 0.025);
 
         // 启用蓝牙发送和接收
         Usart_Mark_RxCplt(BlueTooth, 1);
@@ -371,8 +391,14 @@ int main(void)
           OLED_ShowFrame();
         }
         else if (OLED_REFRESH_REQUEST == 1 && ENABLE_OLED == 1) {
-          print_auto_OLED(distance, angle);
+          print_sensor_data_on_oled(distance, angle);
         }
+
+        // event: 更改compare step
+         if (1 <= MODIFY_STEP_OPT_TYPE && MODIFY_STEP_OPT_TYPE <= 3) {
+          AutoCompare_setStep(auto_compare, MODIFY_STEP_OPT_TYPE, MODIFY_STEP_VALUE);
+          MODIFY_STEP_OPT_TYPE = 0;
+         }
 
         // 如果不处于暂停，则进行下一步
         if (PAUSE == 0) {
@@ -387,13 +413,13 @@ int main(void)
         
         // 刚进入此状态，上拉Trig+开始倒计时
         if (OrdinaryTimer_If_Reset(MainCycle_Timer)) {
-          CaptureTimer_Mark_CaptureCplx(Capture_Timer, 0);
+          CaptureTimer_Mark_CaptureCplt(Capture_Timer, 0);
           CaptureTimer_TriggerUp(Capture_Timer);
           OrdinaryTimer_SetCycle_ms(MainCycle_Timer, TRIG_DURATION_ms);
         }
 
         // 倒计时完毕，将Trig下拉，开始捕获
-        if (OrdinaryTimer_If_CountCplx(MainCycle_Timer)) {
+        if (OrdinaryTimer_If_CountCplt(MainCycle_Timer)) {
           TimerEp_SetCounter((Timer *)Capture_Timer, 0); // 将TIM1清零，防止测量时自动重装载
           CaptureTimer_TriggerDown(Capture_Timer); // 下拉既代表开始捕获
           OrdinaryTimer_Reset(MainCycle_Timer); // 重置计时器
@@ -404,7 +430,7 @@ int main(void)
 
       case MEASURING:
         // 如果捕获完毕
-        if (CaptureTimer_If_CaptureCplx(Capture_Timer)) {
+        if (CaptureTimer_If_CaptureCplt(Capture_Timer)) {
           StateMachine = PROCESSING;
         }
         break;
@@ -417,8 +443,8 @@ int main(void)
         );
         angle = PwmTimer_GetCompare_AsServoAngle(
           ServoPwm_Timer,
-          PWMSERVO_MINDUTY_PERCENT,
-          PWMSERVO_MAXDUTY_PERCENT,
+          PWMSERVO_MIN_COMPARE,
+          PWMSERVO_MAX_COMPARE,
           PWMSERVO_ANGLE_RANGE
         );
         StateMachine = ROTATE;
@@ -446,7 +472,7 @@ int main(void)
         }
 
         // 倒计时完毕
-        if (OrdinaryTimer_If_CountCplx(MainCycle_Timer)) {
+        if (OrdinaryTimer_If_CountCplt(MainCycle_Timer)) {
           OrdinaryTimer_Reset(MainCycle_Timer);
           StateMachine = PAUSE_AND_EVENT_HANDLE;
         }

@@ -113,7 +113,7 @@ void TimerEp_Timer_Free(Timer * this) { free(this); }
 /*---------- 定时器基本方法 -----------*/
 
 
-/*设置定时器的cycle值*/
+/*设置定时器的计数值*/
 void TimerEp_SetCounter(Timer * this, int counter)
 {
     __HAL_TIM_SET_COUNTER(this->htim, counter);
@@ -213,7 +213,7 @@ int OrdinaryTimer_If_Counting(OrdinaryTimer * this)
 
 
 /*检测一个普通定时器是否倒计时完毕*/
-int OrdinaryTimer_If_CountCplx(OrdinaryTimer * this)
+int OrdinaryTimer_If_CountCplt(OrdinaryTimer * this)
 {
     if (this->cycle == 0 && this->AC_flag == 1) {
         return 1;
@@ -242,7 +242,7 @@ void PwmTimer_SetCompare(PwmTimer * this, int compare)
 
 
 /*按比例设置PWM定时器的compare值（向上取整）*/
-void PwmTimer_SetCompareRate(PwmTimer * this, float rate)
+void PwmTimer_SetDuty(PwmTimer * this, float rate)
 {
     if (rate < 0.0f || rate > 1.0f) return;
     int counts = TimerEp_GetArr((Timer *)this) + 1;
@@ -252,12 +252,13 @@ void PwmTimer_SetCompareRate(PwmTimer * this, float rate)
 
 
 /*按时间设置PWM定时器的compare值*/
-void PwmTimer_SetCompareTime(PwmTimer * this, float time)
+void PwmTimer_SetDuration(PwmTimer * this, float time)
 {
     float rate = time / this->timer_base.period;
     if(rate > 1.0f) return;
-    PwmTimer_SetCompareRate(this, rate);
+    PwmTimer_SetDuty(this, rate);
 }
+
 
 /*获取PWM定时器的compare值*/
 int PwmTimer_GetCompare(PwmTimer * this)
@@ -267,7 +268,7 @@ int PwmTimer_GetCompare(PwmTimer * this)
 
 
 /*获取PWM定时器的有效电平比例*/
-float PwmTimer_GetCompareRate(PwmTimer * this)
+float PwmTimer_GetDuty(PwmTimer * this)
 {
     int counts = TimerEp_GetArr((Timer *)this) + 1;
     return (float)PwmTimer_GetCompare(this) / counts;
@@ -275,18 +276,28 @@ float PwmTimer_GetCompareRate(PwmTimer * this)
 
 
 /*获取PWM定时器的有效电平时间（单位：ms）*/
-float PwmTimer_GetCompareTime(PwmTimer * this)
+float PwmTimer_GetDuration(PwmTimer * this)
 {
-    return ( PwmTimer_GetCompareRate(this) * this->timer_base.period );
+    return ( PwmTimer_GetDuty(this) * this->timer_base.period );
 }
 
 
-/*自动计算并返回一个PWM舵机的角度（将this用于驱动此舵机）（采用线性算法）*/
+/*使用compare值计算并返回一个PWM舵机的角度（将this用于驱动此舵机）*/
 float PwmTimer_GetCompare_AsServoAngle( PwmTimer * this,
-                                                    float minDuty_percent, float maxDuty_percent,
-                                                    float angleRange_degree )
+                                        float minCompare, float maxCompare,
+                                        float angleRange_degree )
 {
-    float duty = PwmTimer_GetCompareRate(this);
+    int compare = PwmTimer_GetCompare(this);
+    return (compare - minCompare) / (maxCompare - minCompare) * (angleRange_degree);
+}
+
+
+/*使用占空比计算并返回一个PWM舵机的角度（将this用于驱动此舵机）*/
+float PwmTimer_GetDuty_AsServoAngle( PwmTimer * this,
+                                        float minDuty_percent, float maxDuty_percent,
+                                        float angleRange_degree )
+{
+    float duty = PwmTimer_GetDuty(this);
     float minDuty = minDuty_percent / 100;
     float maxDuty = maxDuty_percent / 100;
     return (duty - minDuty) / (maxDuty - minDuty) * (angleRange_degree);
@@ -402,14 +413,14 @@ int CaptureTimer_LoadCounter_2(CaptureTimer * this)
 
 
 /*将一个捕获定时器的状态设置为已完成捕获或未完成捕获*/
-void CaptureTimer_Mark_CaptureCplx(CaptureTimer * this, int if_done)
+void CaptureTimer_Mark_CaptureCplt(CaptureTimer * this, int is_it_complete)
 {
-    this->CAPTURE_DONE = if_done;
+    this->CAPTURE_DONE = is_it_complete;
 }
 
 
 /*读取一个捕获定时器的状态（已完成捕获或未完成捕获）*/
-int CaptureTimer_If_CaptureCplx(CaptureTimer * this)
+int CaptureTimer_If_CaptureCplt(CaptureTimer * this)
 {
     return this->CAPTURE_DONE;
 }
