@@ -8,7 +8,7 @@
 
 /* 以下变量定义在 main.c 中*/
 extern Usart * BlueTooth;
-extern volatile int PAUSE_REQUEST;
+extern volatile int PAUSE;
 extern volatile int ENABLE_OLED;
 extern volatile int OLED_CLEAR_REQUEST;
 extern volatile int OLED_REFRESH_REQUEST;
@@ -19,7 +19,6 @@ extern LED * LedGreen;
 extern LED * LedBlue;
 
 
-// $05: callback
 /*串口Tx回调函数*/
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
@@ -67,7 +66,6 @@ void send_auto_bluetooth(float distance_mm, float angle_deg)
 
     Usart_Mark_TxCplt(BlueTooth, 0);
     Usart_Transmit_DMA_noHT(BlueTooth, sendMsg, 9);
-    // $05: call
 }
 
 
@@ -110,13 +108,13 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
     {
         if (para == 0)      // 解除暂停
         {
-            PAUSE_REQUEST = 0;
+            PAUSE = 0;
             LED_on(LedGreen);
             LED_off(LedRed);
         }
         else if (para == 1) // 暂停
         {
-            PAUSE_REQUEST = 1;
+            PAUSE = 1;
             LED_off(LedGreen);
             LED_on(LedRed);
         }

@@ -70,6 +70,8 @@ void CaptureTimer_SaveCounter_Auto_2(CaptureTimer * this);
 void CaptureTimer_SaveCounter_both(CaptureTimer * this);
 int CaptureTimer_LoadCounter_1(CaptureTimer * this);
 int CaptureTimer_LoadCounter_2(CaptureTimer * this);
+void CaptureTimer_Mark_CaptureCplx(CaptureTimer * this, int if_done);
+int CaptureTimer_If_CaptureCplx(CaptureTimer * this);
 
 
 #endif // __TIMER_EP_H

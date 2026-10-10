@@ -10,6 +10,7 @@
 #include "stm32f1xx_hal_tim.h"
 #include <stdint.h>
 #include <stdlib.h>
+#include <sys/types.h>
 
 
 struct Timer {
@@ -200,7 +201,7 @@ int OrdinaryTimer_If_Reset(OrdinaryTimer * this)
 }
 
 
-/*检测一个普通定时器是否正在计数*/
+/*检测一个普通定时器是否正在倒计时*/
 int OrdinaryTimer_If_Counting(OrdinaryTimer * this)
 {
     if (this->cycle > 0) {
@@ -211,7 +212,7 @@ int OrdinaryTimer_If_Counting(OrdinaryTimer * this)
 }
 
 
-/*检测一个普通定时器是否已经归零*/
+/*检测一个普通定时器是否倒计时完毕*/
 int OrdinaryTimer_If_CountCplx(OrdinaryTimer * this)
 {
     if (this->cycle == 0 && this->AC_flag == 1) {
@@ -222,7 +223,7 @@ int OrdinaryTimer_If_CountCplx(OrdinaryTimer * this)
 }
 
 
-/*根据传入的时间（单位：ms）自动设置cycle值*/
+/*将传入的时间（单位：ms）设置为普通计时器的cycle值*/
 void OrdinaryTimer_SetCycle_ms(OrdinaryTimer * this, float time_ms)
 {
     OrdinaryTimer_SetCycle(this, (int)TimerEp_ms2cycle((Timer*)this, time_ms));
@@ -397,4 +398,18 @@ int CaptureTimer_LoadCounter_1(CaptureTimer * this)
 int CaptureTimer_LoadCounter_2(CaptureTimer * this)
 {
     return this->capture_count_2;
+}
+
+
+/*将一个捕获定时器的状态设置为已完成捕获或未完成捕获*/
+void CaptureTimer_Mark_CaptureCplx(CaptureTimer * this, int if_done)
+{
+    this->CAPTURE_DONE = if_done;
+}
+
+
+/*读取一个捕获定时器的状态（已完成捕获或未完成捕获）*/
+int CaptureTimer_If_CaptureCplx(CaptureTimer * this)
+{
+    return this->CAPTURE_DONE;
 }

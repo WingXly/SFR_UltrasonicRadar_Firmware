@@ -75,7 +75,7 @@
 
 volatile StateMachine_TypeDef StateMachine = INIT; // 状态机
 
-volatile int PAUSE_REQUEST = 0;                    // 是否暂停（IDLE默认暂停）
+volatile int PAUSE = 0;                            // 是否暂停（IDLE默认暂停）
 volatile int ENABLE_OLED = -1;                     // 是否启用OLED输出（IDLE默认不启用）
 
 volatile int OLED_REFRESH_REQUEST = 0;             // 请求OLED屏幕刷新标志位
@@ -171,13 +171,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
   // TIM2的OLED展示
   if (htim->Instance == TimerEp_GetInstance((Timer*)OledCycle_Timer)) {
-    if (StateMachine == INIT || PAUSE_REQUEST == 1) return;
-    OLED_REFRESH_REQUEST = 1;
+    if (!PAUSE) {
+      OLED_REFRESH_REQUEST = 1;
+    }
   }
 }
 
 
-// $02: callback
 /*计时器捕获处理函数*/
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
@@ -187,8 +187,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
        && StateMachine == MEASURING )
   {
     CaptureTimer_SaveCounter_both(Capture_Timer);
-    StateMachine = PROCESSING;
-    // $03: call
+    CaptureTimer_Mark_CaptureCplx(Capture_Timer, 1);
   }
 }
 
@@ -310,7 +309,7 @@ int main(void)
         // 启动时暂停
         LED_off(LedGreen);
         LED_on(LedRed);
-        PAUSE_REQUEST = 1;
+        PAUSE = 1;
 
         // 启动时不启用OLED输出
         LED_off(LedBlue);
@@ -342,7 +341,7 @@ int main(void)
           if (KEY1_IS_PRESSED()) {
             LED_toggle(LedGreen);
             LED_toggle(LedRed);
-            PAUSE_REQUEST = 1 - PAUSE_REQUEST;
+            PAUSE = 1 - PAUSE;
             
             while (KEY1_IS_PRESSED());
           }
@@ -376,7 +375,7 @@ int main(void)
         }
 
         // 如果不处于暂停，则进行下一步
-        if (PAUSE_REQUEST == 0) {
+        if (PAUSE == 0) {
           StateMachine = TRIG_UP_AND_DOWN;
         }
         break;
@@ -386,28 +385,32 @@ int main(void)
         // 正在倒计时
         if (OrdinaryTimer_If_Counting(MainCycle_Timer)) break;
         
-        // 刚进入此状态，开始倒计时
+        // 刚进入此状态，上拉Trig+开始倒计时
         if (OrdinaryTimer_If_Reset(MainCycle_Timer)) {
+          CaptureTimer_Mark_CaptureCplx(Capture_Timer, 0);
           CaptureTimer_TriggerUp(Capture_Timer);
           OrdinaryTimer_SetCycle_ms(MainCycle_Timer, TRIG_DURATION_ms);
         }
 
-        // 倒计时完毕
+        // 倒计时完毕，将Trig下拉，开始捕获
         if (OrdinaryTimer_If_CountCplx(MainCycle_Timer)) {
-          CaptureTimer_TriggerDown(Capture_Timer);
           TimerEp_SetCounter((Timer *)Capture_Timer, 0); // 将TIM1清零，防止测量时自动重装载
-          OrdinaryTimer_Reset(MainCycle_Timer);
+          CaptureTimer_TriggerDown(Capture_Timer); // 下拉既代表开始捕获
+          OrdinaryTimer_Reset(MainCycle_Timer); // 重置计时器
           StateMachine = MEASURING;
         }
         break;
 
 
       case MEASURING:
+        // 如果捕获完毕
+        if (CaptureTimer_If_CaptureCplx(Capture_Timer)) {
+          StateMachine = PROCESSING;
+        }
         break;
 
 
       case PROCESSING:
-      // $03: callback
         distance = calc_distance_mm(
           CaptureTimer_LoadCounter_1(Capture_Timer),
           CaptureTimer_LoadCounter_2(Capture_Timer)
@@ -448,7 +451,6 @@ int main(void)
           StateMachine = PAUSE_AND_EVENT_HANDLE;
         }
         break;
-        // $04 call
     }
 
     /* USER CODE END WHILE */
