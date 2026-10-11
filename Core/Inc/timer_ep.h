@@ -36,6 +36,8 @@ float TimerEp_ms2cycle(Timer * this, float ms);
 TIM_TypeDef * TimerEp_GetInstance(Timer * this);
 
 // 普通定时器
+void OrdinaryTimer_Init(OrdinaryTimer * this);
+void OrdinaryTimer_Init_IT(OrdinaryTimer * this);
 void OrdinaryTimer_SetCycle(OrdinaryTimer * this, int cycle);
 void OrdinaryTimer_CountDown(OrdinaryTimer * this);
 void OrdinaryTimer_Reset(OrdinaryTimer * this);
@@ -45,6 +47,7 @@ int OrdinaryTimer_is_CountCplt(OrdinaryTimer * this);
 void OrdinaryTimer_SetCycle_ms(OrdinaryTimer * this, float time_ms);
 
 // PWM定时器
+void PwmTimer_Init(PwmTimer * this);
 void PwmTimer_SetCompare(PwmTimer * this, int compare);
 void PwmTimer_SetDuty(PwmTimer * this, float rate);
 void PwmTimer_SetDuration(PwmTimer * this, float time);
@@ -63,6 +66,7 @@ void PwmTimer_SetCompare_Auto_Linear_ForthAndBack(  PwmTimer * this,
                                                     float minDuty_percent, float maxDuty_percent );
 
 // 捕获定时器
+void CaptureTimer_Init(CaptureTimer * this);
 void CaptureTimer_TriggerUp(CaptureTimer * this);
 void CaptureTimer_TriggerDown(CaptureTimer * this);
 volatile int CaptureTimer_ReadCounter_1(CaptureTimer * this);

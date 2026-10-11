@@ -7,7 +7,7 @@
 
 
 /* 以下变量定义在 main.c 中*/
-extern Usart * BlueTooth;
+extern Usart * bluetooth;
 extern volatile int PAUSE;
 extern volatile int ENABLE_OLED;
 extern volatile int OLED_CLEAR_REQUEST;
@@ -15,25 +15,25 @@ extern volatile int OLED_REFRESH_REQUEST;
 extern volatile float cooling_time_ms;
 extern volatile int MODIFY_STEP_OPT_TYPE;
 extern volatile int MODIFY_STEP_VALUE;
-extern LED * LedRed;
-extern LED * LedGreen;
-extern LED * LedBlue;
+extern LED * led_red;
+extern LED * led_green;
+extern LED * led_blue;
 
 
 /*串口Tx回调函数*/
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
-    if (huart == Usart_pHuart(BlueTooth)) {
-        Usart_mark_TxCplt(BlueTooth, 1);
+    if (huart == Usart_pHuart(bluetooth)) {
+        Usart_mark_TxCplt(bluetooth, 1);
     }
 }
 
 /*串口Rx回调函数*/
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
-    if (huart == Usart_pHuart(BlueTooth)) {
-        Usart_mark_RxCplt(BlueTooth, 1);
-        Usart_mark_RxSize(BlueTooth, Size);
+    if (huart == Usart_pHuart(bluetooth)) {
+        Usart_mark_RxCplt(bluetooth, 1);
+        Usart_mark_RxSize(bluetooth, Size);
     }
 }
 
@@ -64,7 +64,7 @@ void send_auto_bluetooth(float distance_mm, float angle_deg)
     sendMsg[7] = sendMsg[2] ^ sendMsg[3] ^ sendMsg[4] ^ sendMsg[5] ^ sendMsg[6]; // 校验
     sendMsg[8] = FRAME_END;                              // 帧尾
 
-    Usart_Transmit_DMA_noHT(BlueTooth, sendMsg, 9);
+    Usart_Transmit_DMA_noHT(bluetooth, sendMsg, 9);
 }
 
 
@@ -111,14 +111,14 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
         if (para == 0)      // 解除暂停
         {
             PAUSE = 0;
-            LED_on(LedGreen);
-            LED_off(LedRed);
+            LED_on(led_green);
+            LED_off(led_red);
         }
         else if (para == 1) // 暂停
         {
             PAUSE = 1;
-            LED_off(LedGreen);
-            LED_on(LedRed);
+            LED_off(led_green);
+            LED_on(led_red);
         }
     }
     else if (cmd_type == 1) // 设置OLED屏幕的开或关
@@ -127,14 +127,14 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
         {
             ENABLE_OLED = 0;
             OLED_CLEAR_REQUEST = 1;
-            LED_off(LedBlue);
+            LED_off(led_blue);
             
         }
         else if (para == 1) // 开启OLED
         {
             ENABLE_OLED = 1;
             OLED_REFRESH_REQUEST = 1;
-            LED_on(LedBlue);
+            LED_on(led_blue);
         }
     }
     else                    // 报错
@@ -181,6 +181,6 @@ void command_handler_2para(uint16_t cmd_type, uint16_t para1, uint16_t para2)
 void send_error_bluetooth()
 {
     static char sendMsg[50] = "Error";
-    Usart_mark_TxCplt(BlueTooth, 0);
-    Usart_Transmit_DMA_noHT(BlueTooth, (uint8_t*)sendMsg, strlen(sendMsg));
+    Usart_mark_TxCplt(bluetooth, 0);
+    Usart_Transmit_DMA_noHT(bluetooth, (uint8_t*)sendMsg, strlen(sendMsg));
 }

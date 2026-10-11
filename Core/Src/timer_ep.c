@@ -160,6 +160,19 @@ TIM_TypeDef * TimerEp_GetInstance(Timer * this)
 /*---------- 普通定时器 ----------*/
 
 
+/*启动定时器（不启用中断）*/
+void OrdinaryTimer_Init(OrdinaryTimer * this)
+{
+    HAL_TIM_Base_Start(this->timer_base.htim);
+}
+
+/*启动定时器（启用中断）*/
+void OrdinaryTimer_Init_IT(OrdinaryTimer * this)
+{
+    HAL_TIM_Base_Start_IT(this->timer_base.htim);
+}
+
+
 /*设置一个普通定时器的倒计时次数*/
 void OrdinaryTimer_SetCycle(OrdinaryTimer * this, int cycle)
 {
@@ -231,6 +244,13 @@ void OrdinaryTimer_SetCycle_ms(OrdinaryTimer * this, float time_ms)
 
 
 /*---------- PWM定时器 ----------*/
+
+
+/*启动PWM定时器*/
+void PwmTimer_Init(PwmTimer * this)
+{
+    HAL_TIM_PWM_Start(this->timer_base.htim, this->PWM_generation_channel);
+}
 
 
 /*设置PWM定时器的compare值*/
@@ -339,6 +359,15 @@ void PwmTimer_SetCompare_Auto_Linear_ForthAndBack(PwmTimer * this,
 
 
 /*---------- 捕获定时器 ----------*/
+
+
+/*启动捕获定时器*/
+void CaptureTimer_Init(CaptureTimer * this)
+{
+    HAL_TIM_Base_Start(this->timer_base.htim);
+    HAL_TIM_IC_Start(this->timer_base.htim, this->capture_channel_1);
+    HAL_TIM_IC_Start_IT(this->timer_base.htim, this->capture_channel_2);
+}
 
 
 /*拉高捕获定时器的触发器*/

@@ -61,32 +61,31 @@
 /* USER CODE BEGIN Variables */
 
 // 全局标志位
-extern volatile StateMachine_TypeDef StateMachine; // 状态机
+volatile StateMachine_TypeDef StateMachine = INIT; // 状态机
 
-extern volatile int PAUSE;                         // 是否暂停（IDLE默认暂停）
-extern volatile int ENABLE_OLED;                   // 是否启用OLED输出（IDLE默认不启用）
+volatile int PAUSE = 0;                            // 是否暂停（IDLE默认暂停）
+volatile int ENABLE_OLED = 0;                      // 是否启用OLED输出（IDLE默认不启用）
 
-extern volatile int OLED_REFRESH_REQUEST;          // 请求OLED屏幕刷新标志位
-extern volatile int OLED_CLEAR_REQUEST;            // 请求OLED屏幕清空标志位
+volatile int OLED_REFRESH_REQUEST = 0;             // 请求OLED屏幕刷新标志位
+volatile int OLED_CLEAR_REQUEST = 0;               // 请求OLED屏幕清空标志位
 
-extern volatile int MODIFY_STEP_OPT_TYPE;          // 修改step值的操作类型（1:set 2:add 3:remove）
-extern volatile int MODIFY_STEP_VALUE;             // 修改step值的具体数字
+volatile int MODIFY_STEP_OPT_TYPE = 0;             // 修改step值的操作类型（1:set 2:add 3:remove）
+volatile int MODIFY_STEP_VALUE = 1;                // 修改step值的具体数字
 
-extern volatile float cooling_time_ms;             // 冷却时间
+volatile float cooling_time_ms = 30.0f;            // 冷却时间
 
 // 蓝牙串口
-extern Usart * BlueTooth;
+Usart * bluetooth = NULL;
 
 // LED小灯
-extern LED * LedRed;
-extern LED * LedGreen;
-extern LED * LedBlue;
+LED * led_red   = NULL;
+LED * led_green = NULL;
+LED * led_blue  = NULL;
 
 // 定时器
-extern CaptureTimer  * Capture_Timer;
-extern OrdinaryTimer * OledCycle_Timer;
-extern OrdinaryTimer * MainCycle_Timer;
-extern PwmTimer      * ServoPwm_Timer;
+CaptureTimer  * capture_timer   = NULL;
+OrdinaryTimer * main_cycle_timer = NULL;
+PwmTimer      * servo_pwm_timer  = NULL;
 
 // 传感器数据
 float distance = 0;          // 距离（计算值）
@@ -192,15 +191,14 @@ void StartMainTask(void *argument)
 {
   /* USER CODE BEGIN StartMainTask */
 
-  /* ---------------------------------------- */
   // 实例化LED小灯
-  LedRed = LED_Instantiate(LED_RED_GPIO_Port, LED_RED_Pin);
-  LedGreen = LED_Instantiate(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
-  LedBlue = LED_Instantiate(LED_BLUE_GPIO_Port, LED_BLUE_Pin);
+  led_red = LED_Instantiate(LED_RED_GPIO_Port, LED_RED_Pin);
+  led_green = LED_Instantiate(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
+  led_blue = LED_Instantiate(LED_BLUE_GPIO_Port, LED_BLUE_Pin);
 
 
   // 实例化定时器
-  Capture_Timer = CaptureTimer_Instantiate(
+  capture_timer = CaptureTimer_Instantiate(
     &htim1,
     72,
     HC_SR04_Trig_GPIO_Port,
@@ -210,56 +208,53 @@ void StartMainTask(void *argument)
     HAL_TIM_ACTIVE_CHANNEL_4
   );
 
-  OledCycle_Timer = OrdinaryTimer_Instantiate(
-    &htim2,
-    72
-  );
-
-  MainCycle_Timer = OrdinaryTimer_Instantiate(
+  main_cycle_timer = OrdinaryTimer_Instantiate(
     &htim3,
     72
   );
 
-  ServoPwm_Timer = PwmTimer_Instantiate(
+  servo_pwm_timer = PwmTimer_Instantiate(
     &htim4,
     72,
     TIM_CHANNEL_3,
     1
   );
 
+
   // 实例化蓝牙串口
   extern DMA_HandleTypeDef hdma_usart3_rx;
   extern DMA_HandleTypeDef hdma_usart3_tx;
-  BlueTooth = Usart_Instantiate(
+  bluetooth = Usart_Instantiate(
     &huart3,
     &hdma_usart3_rx,
     &hdma_usart3_tx
   );
 
+
+  // 实例化AutoCompare
+  AutoCompare_TypeDef ac_ = {
+    .compare     = PWMSERVO_MIN_COMPARE,
+    .multiplier  = 1,
+    .step        = 1,
+    .compare_min = PWMSERVO_MIN_COMPARE,
+    .compare_max = PWMSERVO_MAX_COMPARE
+  };
+  AutoCompare_TypeDef * auto_compare = &ac_;
+
+
   // 启动外设
   osDelay(20);
-  HAL_TIM_Base_Start(&htim1);
-  HAL_TIM_IC_Start(&htim1, TIM_CHANNEL_3);
-  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_4);
-  HAL_TIM_Base_Start_IT(&htim2);
-  HAL_TIM_Base_Start_IT(&htim3);
-  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
-  OLED_Init();
 
+  CaptureTimer_Init(capture_timer);
+  OrdinaryTimer_Init(main_cycle_timer);
+  PwmTimer_Init(servo_pwm_timer);
+
+  OLED_Init();
   OLED_NewFrame();
   OLED_PrintString(0, 0, "Start", &font16x16, OLED_COLOR_NORMAL);
   OLED_ShowFrame();
-  /* ---------------------------------------- */
 
-    AutoCompare_TypeDef ac_ = {
-      .compare     = PWMSERVO_MIN_COMPARE,
-      .multiplier  = 1,
-      .step        = 1,
-      .compare_min = PWMSERVO_MIN_COMPARE,
-      .compare_max = PWMSERVO_MAX_COMPARE
-    };
-    AutoCompare_TypeDef * auto_compare = &ac_;
-
+  
   /* Infinite loop */
 
   for(;;)
@@ -269,28 +264,28 @@ void StartMainTask(void *argument)
     {
       case INIT:
         // 阻止HC-SR04在INIT状态下工作
-        CaptureTimer_TriggerDown(Capture_Timer);
+        CaptureTimer_TriggerDown(capture_timer);
 
         // 启动时暂停
-        LED_off(LedGreen);
-        LED_on(LedRed);
+        LED_off(led_green);
+        LED_on(led_red);
         PAUSE = 1;
 
         // 启动时不启用OLED输出
-        LED_off(LedBlue);
+        LED_off(led_blue);
 
         // 允许状态机步进
-        OrdinaryTimer_Reset(MainCycle_Timer);
+        OrdinaryTimer_Reset(main_cycle_timer);
 
         // 启动时将舵机置于0度
-        PwmTimer_SetDuty(ServoPwm_Timer, 0.025);
+        PwmTimer_SetDuty(servo_pwm_timer, 0.025);
 
         // 启用蓝牙发送和接收
-        Usart_mark_RxCplt(BlueTooth, 1);
-        Usart_mark_TxCplt(BlueTooth, 1);
+        Usart_mark_RxCplt(bluetooth, 1);
+        Usart_mark_TxCplt(bluetooth, 1);
 
         // 等待命令
-        Usart_ReceiveToIdle_DMA_noHT(BlueTooth);
+        Usart_ReceiveToIdle_DMA_noHT(bluetooth);
 
         osDelay(100);
         StateMachine = PAUSE_AND_EVENT_HANDLE;
@@ -302,8 +297,8 @@ void StartMainTask(void *argument)
         if (KEY1_IS_PRESSED()) {
           osDelay(10);
           if (KEY1_IS_PRESSED()) {
-            LED_toggle(LedGreen);
-            LED_toggle(LedRed);
+            LED_toggle(led_green);
+            LED_toggle(led_red);
             PAUSE = 1 - PAUSE;
             
             while (KEY1_IS_PRESSED());
@@ -325,20 +320,20 @@ void StartMainTask(void *argument)
 
       case TRIG_UP_AND_DOWN:
         // 正在倒计时
-        if (OrdinaryTimer_is_Counting(MainCycle_Timer)) break;
+        if (OrdinaryTimer_is_Counting(main_cycle_timer)) break;
         
         // 刚进入此状态，上拉Trig+开始倒计时
-        if (OrdinaryTimer_is_Reset(MainCycle_Timer)) {
-          CaptureTimer_mark_CaptureCplt(Capture_Timer, 0);
-          CaptureTimer_TriggerUp(Capture_Timer);
-          OrdinaryTimer_SetCycle_ms(MainCycle_Timer, TRIG_DURATION_ms);
+        if (OrdinaryTimer_is_Reset(main_cycle_timer)) {
+          CaptureTimer_mark_CaptureCplt(capture_timer, 0);
+          CaptureTimer_TriggerUp(capture_timer);
+          OrdinaryTimer_SetCycle_ms(main_cycle_timer, TRIG_DURATION_ms);
         }
 
         // 倒计时完毕，将Trig下拉，开始捕获
-        if (OrdinaryTimer_is_CountCplt(MainCycle_Timer)) {
-          TimerEp_SetCounter((Timer *)Capture_Timer, 0); // 将TIM1清零，防止测量时自动重装载
-          CaptureTimer_TriggerDown(Capture_Timer); // 下拉既代表开始捕获
-          OrdinaryTimer_Reset(MainCycle_Timer); // 重置计时器
+        if (OrdinaryTimer_is_CountCplt(main_cycle_timer)) {
+          TimerEp_SetCounter((Timer *)capture_timer, 0); // 将TIM1清零，防止测量时自动重装载
+          CaptureTimer_TriggerDown(capture_timer); // 下拉既代表开始捕获
+          OrdinaryTimer_Reset(main_cycle_timer); // 重置计时器
           StateMachine = MEASURING;
         }
         break;
@@ -346,7 +341,7 @@ void StartMainTask(void *argument)
 
       case MEASURING:
         // 如果捕获完毕
-        if (CaptureTimer_is_CaptureCplt(Capture_Timer)) {
+        if (CaptureTimer_is_CaptureCplt(capture_timer)) {
           StateMachine = PROCESSING;
         }
         break;
@@ -354,11 +349,11 @@ void StartMainTask(void *argument)
 
       case PROCESSING:
         distance = calc_distance_mm(
-          CaptureTimer_LoadCounter_1(Capture_Timer),
-          CaptureTimer_LoadCounter_2(Capture_Timer)
+          CaptureTimer_LoadCounter_1(capture_timer),
+          CaptureTimer_LoadCounter_2(capture_timer)
         );
         angle = PwmTimer_GetCompare_AsServoAngle(
-          ServoPwm_Timer,
+          servo_pwm_timer,
           PWMSERVO_MIN_COMPARE,
           PWMSERVO_MAX_COMPARE,
           PWMSERVO_ANGLE_RANGE
@@ -369,10 +364,10 @@ void StartMainTask(void *argument)
 
       case ROTATE:
         PwmTimer_SetCompare(
-          ServoPwm_Timer,
+          servo_pwm_timer,
           AutoCompare_next(auto_compare)
         );
-        OrdinaryTimer_Reset(MainCycle_Timer);
+        OrdinaryTimer_Reset(main_cycle_timer);
         OLED_REFRESH_REQUEST = 1;
         osMessageQueuePut(sensor_dataHandle, &distance, 0, 0);
         osMessageQueuePut(sensor_dataHandle, &angle, 0, 0);
@@ -382,20 +377,22 @@ void StartMainTask(void *argument)
 
       case COOLING:
         // 正在倒计时
-        if (OrdinaryTimer_is_Counting(MainCycle_Timer)) break;
+        if (OrdinaryTimer_is_Counting(main_cycle_timer)) break;
 
         // 刚进入COOLING，开始倒计时
-        if (OrdinaryTimer_is_Reset(MainCycle_Timer)) {
-          OrdinaryTimer_SetCycle_ms(MainCycle_Timer, cooling_time_ms);
+        if (OrdinaryTimer_is_Reset(main_cycle_timer)) {
+          OrdinaryTimer_SetCycle_ms(main_cycle_timer, cooling_time_ms);
         }
 
         // 倒计时完毕
-        if (OrdinaryTimer_is_CountCplt(MainCycle_Timer)) {
-          OrdinaryTimer_Reset(MainCycle_Timer);
+        if (OrdinaryTimer_is_CountCplt(main_cycle_timer)) {
+          OrdinaryTimer_Reset(main_cycle_timer);
           StateMachine = PAUSE_AND_EVENT_HANDLE;
         }
         break;
       }
+
+
       osDelay(1);
   }
 
@@ -419,7 +416,7 @@ void StartOledTask(void *argument)
     if (KEY2_IS_PRESSED()) {
       HAL_Delay(10);
       if (KEY2_IS_PRESSED()) {
-        LED_toggle(LedBlue);
+        LED_toggle(led_blue);
         ENABLE_OLED = 1 - ENABLE_OLED;
 
         if (ENABLE_OLED) OLED_REFRESH_REQUEST = 1;
@@ -457,17 +454,17 @@ void StartBluetoothTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    if (Usart_is_RxCplt(BlueTooth)) {
-      Usart_mark_RxCplt(BlueTooth, 0);
-      bluetooth_msg_handler(BlueTooth);
-      Usart_ReceiveToIdle_DMA_noHT(BlueTooth);
+    if (Usart_is_RxCplt(bluetooth)) {
+      Usart_mark_RxCplt(bluetooth, 0);
+      bluetooth_msg_handler(bluetooth);
+      Usart_ReceiveToIdle_DMA_noHT(bluetooth);
     }
 
-    if (Usart_is_TxCplt(BlueTooth)
+    if (Usart_is_TxCplt(bluetooth)
         && osMessageQueueGetCount(sensor_dataHandle) == 2
        )
     {
-      Usart_mark_TxCplt(BlueTooth, 0);
+      Usart_mark_TxCplt(bluetooth, 0);
       float d = 0;
       float a = 0;
       osMessageQueueGet(sensor_dataHandle, &d, 0, 0);

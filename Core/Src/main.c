@@ -57,32 +57,31 @@
 /* USER CODE BEGIN PV */
 
 // 全局标志位
-volatile StateMachine_TypeDef StateMachine = INIT; // 状态机
+extern volatile StateMachine_TypeDef StateMachine; // 状态机
 
-volatile int PAUSE = 0;                            // 是否暂停（IDLE默认暂停）
-volatile int ENABLE_OLED = 0;                      // 是否启用OLED输出（IDLE默认不启用）
+extern volatile int PAUSE;                         // 是否暂停（IDLE默认暂停）
+extern volatile int ENABLE_OLED;                   // 是否启用OLED输出（IDLE默认不启用）
 
-volatile int OLED_REFRESH_REQUEST = 0;             // 请求OLED屏幕刷新标志位
-volatile int OLED_CLEAR_REQUEST = 0;               // 请求OLED屏幕清空标志位
+extern volatile int OLED_REFRESH_REQUEST;          // 请求OLED屏幕刷新标志位
+extern volatile int OLED_CLEAR_REQUEST;            // 请求OLED屏幕清空标志位
 
-volatile int MODIFY_STEP_OPT_TYPE = 0;             // 修改step值的操作类型（1:set 2:add 3:remove）
-volatile int MODIFY_STEP_VALUE = 1;                // 修改step值的具体数字
+extern volatile int MODIFY_STEP_OPT_TYPE;          // 修改step值的操作类型（1:set 2:add 3:remove）
+extern volatile int MODIFY_STEP_VALUE;             // 修改step值的具体数字
 
-volatile float cooling_time_ms = 30.0f;            // 冷却时间
+extern volatile float cooling_time_ms;             // 冷却时间
 
 // 蓝牙串口
-Usart * BlueTooth = NULL;
+extern Usart * bluetooth;
 
 // LED小灯
-LED * LedRed   = NULL;
-LED * LedGreen = NULL;
-LED * LedBlue  = NULL;
+extern LED * led_red;
+extern LED * led_green;
+extern LED * led_blue;
 
 // 定时器
-CaptureTimer  * Capture_Timer   = NULL;
-OrdinaryTimer * OledCycle_Timer = NULL;
-OrdinaryTimer * MainCycle_Timer = NULL;
-PwmTimer      * ServoPwm_Timer  = NULL;
+extern CaptureTimer  * capture_timer;
+extern OrdinaryTimer * main_cycle_timer;
+extern PwmTimer      * servo_pwm_timer;
 
 /* USER CODE END PV */
 
@@ -156,8 +155,8 @@ void AutoCompare_setStep( AutoCompare_TypeDef * this,
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   // TIM3的us级计时
-  if (htim->Instance == TimerEp_GetInstance((Timer*)MainCycle_Timer)) {
-    OrdinaryTimer_CountDown(MainCycle_Timer);
+  if (htim->Instance == TimerEp_GetInstance((Timer*)main_cycle_timer)) {
+    OrdinaryTimer_CountDown(main_cycle_timer);
   } 
 }
 
@@ -166,12 +165,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
   // TIM1捕获上升和下降沿
-  if ( htim->Instance == TimerEp_GetInstance((Timer*)Capture_Timer)
-       && htim->Channel == CaptureTimer_GetActiveChannel(Capture_Timer)
+  if ( htim->Instance == TimerEp_GetInstance((Timer*)capture_timer)
+       && htim->Channel == CaptureTimer_GetActiveChannel(capture_timer)
        && StateMachine == MEASURING )
   {
-    CaptureTimer_SaveCounter_both(Capture_Timer);
-    CaptureTimer_mark_CaptureCplt(Capture_Timer, 1);
+    CaptureTimer_SaveCounter_both(capture_timer);
+    CaptureTimer_mark_CaptureCplt(capture_timer, 1);
   }
 }
 
@@ -213,7 +212,6 @@ int main(void)
   MX_TIM1_Init();
   MX_TIM3_Init();
   MX_USART3_UART_Init();
-  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
