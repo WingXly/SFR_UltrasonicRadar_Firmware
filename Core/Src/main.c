@@ -18,10 +18,9 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
 #include "dma.h"
 #include "i2c.h"
-#include "stm32f1xx_hal_def.h"
-#include "stm32f1xx_hal_tim.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
@@ -46,22 +45,6 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-// 声速
-#define SPEED_OF_SOUND_m_s 340.0f
-
-// HC-SR04的触发用时
-#define TRIG_DURATION_ms 0.01f
-
-// PWM舵机最小占空比
-#define PWMSERVO_MIN_COMPARE 50
-
-// PWM舵机最大占空比
-#define PWMSERVO_MAX_COMPARE 250
-
-// PWM舵机的角度范围
-#define PWMSERVO_ANGLE_RANGE 180.0f
-
-
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -73,6 +56,7 @@
 
 /* USER CODE BEGIN PV */
 
+// 全局标志位
 volatile StateMachine_TypeDef StateMachine = INIT; // 状态机
 
 volatile int PAUSE = 0;                            // 是否暂停（IDLE默认暂停）
@@ -100,10 +84,12 @@ CaptureTimer  * Capture_Timer   = NULL;
 OrdinaryTimer * OledCycle_Timer = NULL;
 OrdinaryTimer * MainCycle_Timer = NULL;
 PwmTimer      * ServoPwm_Timer  = NULL;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
+void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
 
 
@@ -129,14 +115,6 @@ void print_sensor_data_on_oled(float distance, float angle)
   OLED_ShowFrame();
 }
 
-
-/*PwmServo_Timer的compare控制器*/
- typedef struct {
-  int compare;
-  int multiplier;
-  int step;
-  int compare_min; int compare_max;
-} AutoCompare_TypeDef;
 
 /*计算下一个compare值并返回计算结果*/
 int AutoCompare_next(AutoCompare_TypeDef * this)
@@ -182,13 +160,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   if (htim->Instance == TimerEp_GetInstance((Timer*)MainCycle_Timer)) {
     OrdinaryTimer_CountDown(MainCycle_Timer);
   } 
-
-  // TIM2的OLED展示
-  if (htim->Instance == TimerEp_GetInstance((Timer*)OledCycle_Timer)) {
-    if (!PAUSE) {
-      OLED_REFRESH_REQUEST = 1;
-    }
-  }
 }
 
 
@@ -216,17 +187,6 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
-  float distance = 0;          // 距离（计算值）
-  float angle = 0;             // 角度（计算值）
-  AutoCompare_TypeDef ac_ = {
-    .compare     = PWMSERVO_MIN_COMPARE,
-    .multiplier  = 1,
-    .step        = 1,
-    .compare_min = PWMSERVO_MIN_COMPARE,
-    .compare_max = PWMSERVO_MAX_COMPARE
-  };
-  AutoCompare_TypeDef * auto_compare = &ac_;
 
   /* USER CODE END 1 */
 
@@ -257,228 +217,21 @@ int main(void)
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
-  /* ---------------------------------------- */
-  // 实例化LED小灯
-  LedRed = LED_Instantiate(LED_RED_GPIO_Port, LED_RED_Pin);
-  LedGreen = LED_Instantiate(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
-  LedBlue = LED_Instantiate(LED_BLUE_GPIO_Port, LED_BLUE_Pin);
-
-
-  // 实例化定时器
-  Capture_Timer = CaptureTimer_Instantiate(
-    &htim1,
-    72,
-    HC_SR04_Trig_GPIO_Port,
-    HC_SR04_Trig_Pin,
-    TIM_CHANNEL_3,
-    TIM_CHANNEL_4,
-    HAL_TIM_ACTIVE_CHANNEL_4
-  );
-
-  OledCycle_Timer = OrdinaryTimer_Instantiate(
-    &htim2,
-    72
-  );
-
-  MainCycle_Timer = OrdinaryTimer_Instantiate(
-    &htim3,
-    72
-  );
-
-  ServoPwm_Timer = PwmTimer_Instantiate(
-    &htim4,
-    72,
-    TIM_CHANNEL_3,
-    1
-  );
-
-  // 实例化蓝牙串口
-  extern DMA_HandleTypeDef hdma_usart3_rx;
-  extern DMA_HandleTypeDef hdma_usart3_tx;
-  BlueTooth = Usart_Instantiate(
-    &huart3,
-    &hdma_usart3_rx,
-    &hdma_usart3_tx
-  );
-  /* ---------------------------------------- */
-
-  HAL_Delay(20);
-  HAL_TIM_Base_Start(&htim1);
-  HAL_TIM_IC_Start(&htim1, TIM_CHANNEL_3);
-  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_4);
-  HAL_TIM_Base_Start_IT(&htim2);
-  HAL_TIM_Base_Start_IT(&htim3);
-  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
-  OLED_Init();
-
-  OLED_NewFrame();
-  OLED_PrintString(0, 0, "Start", &font16x16, OLED_COLOR_NORMAL);
-  OLED_ShowFrame();
-
   /* USER CODE END 2 */
+
+  /* Init scheduler */
+  osKernelInitialize();  /* Call init function for freertos objects (in cmsis_os2.c) */
+  MX_FREERTOS_Init();
+
+  /* Start scheduler */
+  osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    // 遍历状态机
-    switch (StateMachine)
-    {
-      case INIT:
-        // 阻止HC-SR04在INIT状态下工作
-        CaptureTimer_TriggerDown(Capture_Timer);
-
-        // 启动时暂停
-        LED_off(LedGreen);
-        LED_on(LedRed);
-        PAUSE = 1;
-
-        // 启动时不启用OLED输出
-        LED_off(LedBlue);
-
-        // 允许状态机步进
-        OrdinaryTimer_Reset(MainCycle_Timer);
-
-        // 启动时将舵机置于0度
-        PwmTimer_SetDuty(ServoPwm_Timer, 0.025);
-
-        // 启用蓝牙发送和接收
-        Usart_Mark_RxCplt(BlueTooth, 1);
-        Usart_Mark_TxCplt(BlueTooth, 1);
-
-        // 等待命令
-        Usart_ReceiveToIdle_DMA_noHT(BlueTooth);
-
-        HAL_Delay(100);
-        StateMachine = PAUSE_AND_EVENT_HANDLE;
-        break;
-
-
-      case PAUSE_AND_EVENT_HANDLE:
-        // event: 按按钮（KEY1）暂停或解除暂停
-        if (KEY1_IS_PRESSED()) {
-          HAL_Delay(10);
-          if (KEY1_IS_PRESSED()) {
-            LED_toggle(LedGreen);
-            LED_toggle(LedRed);
-            PAUSE = 1 - PAUSE;
-            
-            while (KEY1_IS_PRESSED());
-          }
-        }
-
-        // event: 按按钮（KEY2）启用或禁用OLED输出
-        if (KEY2_IS_PRESSED()) {
-          HAL_Delay(10);
-          if (KEY2_IS_PRESSED()) {
-            LED_toggle(LedBlue);
-            ENABLE_OLED = 1 - ENABLE_OLED;
-
-            if (ENABLE_OLED) {
-              OLED_REFRESH_REQUEST = 1;
-            } else {
-              OLED_CLEAR_REQUEST = 1;
-            }
-            
-            while (KEY2_IS_PRESSED());
-          }
-        }
-
-        // event: 清空或显示OLED
-        if (OLED_CLEAR_REQUEST) {
-          OLED_CLEAR_REQUEST = 0;
-          OLED_NewFrame();
-          OLED_ShowFrame();
-        }
-        else if (OLED_REFRESH_REQUEST == 1 && ENABLE_OLED == 1) {
-          print_sensor_data_on_oled(distance, angle);
-        }
-
-        // event: 更改compare step
-         if (1 <= MODIFY_STEP_OPT_TYPE && MODIFY_STEP_OPT_TYPE <= 3) {
-          AutoCompare_setStep(auto_compare, MODIFY_STEP_OPT_TYPE, MODIFY_STEP_VALUE);
-          MODIFY_STEP_OPT_TYPE = 0;
-         }
-
-        // 如果不处于暂停，则进行下一步
-        if (PAUSE == 0) {
-          StateMachine = TRIG_UP_AND_DOWN;
-        }
-        break;
-
-
-      case TRIG_UP_AND_DOWN:
-        // 正在倒计时
-        if (OrdinaryTimer_If_Counting(MainCycle_Timer)) break;
-        
-        // 刚进入此状态，上拉Trig+开始倒计时
-        if (OrdinaryTimer_If_Reset(MainCycle_Timer)) {
-          CaptureTimer_Mark_CaptureCplt(Capture_Timer, 0);
-          CaptureTimer_TriggerUp(Capture_Timer);
-          OrdinaryTimer_SetCycle_ms(MainCycle_Timer, TRIG_DURATION_ms);
-        }
-
-        // 倒计时完毕，将Trig下拉，开始捕获
-        if (OrdinaryTimer_If_CountCplt(MainCycle_Timer)) {
-          TimerEp_SetCounter((Timer *)Capture_Timer, 0); // 将TIM1清零，防止测量时自动重装载
-          CaptureTimer_TriggerDown(Capture_Timer); // 下拉既代表开始捕获
-          OrdinaryTimer_Reset(MainCycle_Timer); // 重置计时器
-          StateMachine = MEASURING;
-        }
-        break;
-
-
-      case MEASURING:
-        // 如果捕获完毕
-        if (CaptureTimer_If_CaptureCplt(Capture_Timer)) {
-          StateMachine = PROCESSING;
-        }
-        break;
-
-
-      case PROCESSING:
-        distance = calc_distance_mm(
-          CaptureTimer_LoadCounter_1(Capture_Timer),
-          CaptureTimer_LoadCounter_2(Capture_Timer)
-        );
-        angle = PwmTimer_GetCompare_AsServoAngle(
-          ServoPwm_Timer,
-          PWMSERVO_MIN_COMPARE,
-          PWMSERVO_MAX_COMPARE,
-          PWMSERVO_ANGLE_RANGE
-        );
-        StateMachine = ROTATE;
-        break;
-
-
-      case ROTATE:
-        PwmTimer_SetCompare(
-          ServoPwm_Timer,
-          AutoCompare_next(auto_compare)
-        );
-        OrdinaryTimer_Reset(MainCycle_Timer);
-        StateMachine = COOLING;
-        break;
-
-        
-      case COOLING:
-        // 正在倒计时
-        if (OrdinaryTimer_If_Counting(MainCycle_Timer)) break;
-
-        // 刚进入COOLING，开始倒计时
-        if (OrdinaryTimer_If_Reset(MainCycle_Timer)) {
-          send_auto_bluetooth(distance, angle);
-          OrdinaryTimer_SetCycle_ms(MainCycle_Timer, cooling_time_ms);
-        }
-
-        // 倒计时完毕
-        if (OrdinaryTimer_If_CountCplt(MainCycle_Timer)) {
-          OrdinaryTimer_Reset(MainCycle_Timer);
-          StateMachine = PAUSE_AND_EVENT_HANDLE;
-        }
-        break;
-    }
-
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

@@ -22,7 +22,6 @@
 #ifndef __MAIN_H
 #define __MAIN_H
 
-#include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -47,6 +46,7 @@ extern "C" {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
+
 typedef enum {
   INIT,                   // 初始化
   PAUSE_AND_EVENT_HANDLE, // 暂停与事件处理
@@ -56,12 +56,33 @@ typedef enum {
   ROTATE,                 // <main> 发布舵机旋转指令
   COOLING                 // <TIM3> 冷却
 } StateMachine_TypeDef;
+
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim);
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim);
+
+float calc_distance_mm(int up_edge_number, int down_edge_number);
+void print_sensor_data_on_oled(float distance, float angle);
+
+// class AutoCompare_TypeDef {
+      typedef struct {
+        int compare;
+        int multiplier;
+        int step;
+        int compare_min;
+        int compare_max;
+      } AutoCompare_TypeDef;
+      
+      int AutoCompare_next(AutoCompare_TypeDef * this);
+      void AutoCompare_setStep( AutoCompare_TypeDef * this,
+                                int operation_type, int value );
+// }
 
 /* USER CODE END EFP */
 
@@ -80,8 +101,25 @@ void Error_Handler(void);
 #define HC_SR04_Trig_GPIO_Port GPIOA
 
 /* USER CODE BEGIN Private defines */
+
+// 声速
+#define SPEED_OF_SOUND_m_s 340.0f
+
+// HC-SR04的触发用时
+#define TRIG_DURATION_ms 0.01f
+
+// PWM舵机最小占空比
+#define PWMSERVO_MIN_COMPARE 50
+
+// PWM舵机最大占空比
+#define PWMSERVO_MAX_COMPARE 250
+
+// PWM舵机的角度范围
+#define PWMSERVO_ANGLE_RANGE 180.0f
+
 #define KEY1_IS_PRESSED() (HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_RESET)
 #define KEY2_IS_PRESSED() (HAL_GPIO_ReadPin(KEY2_GPIO_Port, KEY2_Pin) == GPIO_PIN_RESET)
+
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

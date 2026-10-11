@@ -1,11 +1,69 @@
-build
-mx.scratch
-!.settings
-.vscode
-.settings
-cmake
-.clangd
-.mxproject
-startup_stm32f103xb.s
-STM32F103xx_FLASH.ld
-Drivers
+# Build directories
+/build/
+/Debug/
+/Release/
+/cmake-build*/
+
+# CMake / Ninja generated files (including in-source builds)
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+build.ninja
+rules.ninja
+.ninja_deps
+.ninja_log
+compile_commands.json
+/CMakeUserPresets.json
+
+# Compiler / linker outputs
+*.o
+*.obj
+*.a
+*.elf
+*.axf
+*.bin
+*.hex
+*.map
+*.list
+*.lst
+*.d
+*.su
+*.gcda
+*.gcno
+*.gcov
+
+# Local IDE settings and caches
+/.vscode/
+/.settings/
+/.idea/
+/.metadata/
+/.clangd
+.cache/
+*.launch
+
+# CubeMX generated files already excluded by this project
+/mx.scratch
+/.mxproject
+/cmake/
+/startup_stm32f103xb.s
+/STM32F103xx_FLASH.ld
+/Drivers/
+/Middlewares
+
+# Temporary files / logs / crash dumps
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+*.stackdump
+*.dmp
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
