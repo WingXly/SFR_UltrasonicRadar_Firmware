@@ -35,6 +35,7 @@
 #include "oled.h"
 #include "font.h"
 #include "timer_ep.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <sys/_intsup.h>
 #include "bluetooth.h"
@@ -113,12 +114,10 @@ const osThreadAttr_t BluetoothTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityHigh,
 };
-/* Definitions for EventTask */
-osThreadId_t EventTaskHandle;
-const osThreadAttr_t EventTask_attributes = {
-  .name = "EventTask",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal2,
+/* Definitions for sensor_data */
+osMessageQueueId_t sensor_dataHandle;
+const osMessageQueueAttr_t sensor_data_attributes = {
+  .name = "sensor_data"
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -129,7 +128,6 @@ const osThreadAttr_t EventTask_attributes = {
 void StartMainTask(void *argument);
 void StartOledTask(void *argument);
 void StartBluetoothTask(void *argument);
-void StartEventTask(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -155,6 +153,10 @@ void MX_FREERTOS_Init(void) {
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
 
+  /* Create the queue(s) */
+  /* creation of sensor_data */
+  sensor_dataHandle = osMessageQueueNew (2, sizeof(float), &sensor_data_attributes);
+
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
@@ -168,9 +170,6 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of BluetoothTask */
   BluetoothTaskHandle = osThreadNew(StartBluetoothTask, NULL, &BluetoothTask_attributes);
-
-  /* creation of EventTask */
-  EventTaskHandle = osThreadNew(StartEventTask, NULL, &EventTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -287,8 +286,8 @@ void StartMainTask(void *argument)
         PwmTimer_SetDuty(ServoPwm_Timer, 0.025);
 
         // 启用蓝牙发送和接收
-        Usart_Mark_RxCplt(BlueTooth, 1);
-        Usart_Mark_TxCplt(BlueTooth, 1);
+        Usart_mark_RxCplt(BlueTooth, 1);
+        Usart_mark_TxCplt(BlueTooth, 1);
 
         // 等待命令
         Usart_ReceiveToIdle_DMA_noHT(BlueTooth);
@@ -326,17 +325,17 @@ void StartMainTask(void *argument)
 
       case TRIG_UP_AND_DOWN:
         // 正在倒计时
-        if (OrdinaryTimer_If_Counting(MainCycle_Timer)) break;
+        if (OrdinaryTimer_is_Counting(MainCycle_Timer)) break;
         
         // 刚进入此状态，上拉Trig+开始倒计时
-        if (OrdinaryTimer_If_Reset(MainCycle_Timer)) {
-          CaptureTimer_Mark_CaptureCplt(Capture_Timer, 0);
+        if (OrdinaryTimer_is_Reset(MainCycle_Timer)) {
+          CaptureTimer_mark_CaptureCplt(Capture_Timer, 0);
           CaptureTimer_TriggerUp(Capture_Timer);
           OrdinaryTimer_SetCycle_ms(MainCycle_Timer, TRIG_DURATION_ms);
         }
 
         // 倒计时完毕，将Trig下拉，开始捕获
-        if (OrdinaryTimer_If_CountCplt(MainCycle_Timer)) {
+        if (OrdinaryTimer_is_CountCplt(MainCycle_Timer)) {
           TimerEp_SetCounter((Timer *)Capture_Timer, 0); // 将TIM1清零，防止测量时自动重装载
           CaptureTimer_TriggerDown(Capture_Timer); // 下拉既代表开始捕获
           OrdinaryTimer_Reset(MainCycle_Timer); // 重置计时器
@@ -347,7 +346,7 @@ void StartMainTask(void *argument)
 
       case MEASURING:
         // 如果捕获完毕
-        if (CaptureTimer_If_CaptureCplt(Capture_Timer)) {
+        if (CaptureTimer_is_CaptureCplt(Capture_Timer)) {
           StateMachine = PROCESSING;
         }
         break;
@@ -375,22 +374,23 @@ void StartMainTask(void *argument)
         );
         OrdinaryTimer_Reset(MainCycle_Timer);
         OLED_REFRESH_REQUEST = 1;
+        osMessageQueuePut(sensor_dataHandle, &distance, 0, 0);
+        osMessageQueuePut(sensor_dataHandle, &angle, 0, 0);
         StateMachine = COOLING;
         break;
 
-        
+
       case COOLING:
         // 正在倒计时
-        if (OrdinaryTimer_If_Counting(MainCycle_Timer)) break;
+        if (OrdinaryTimer_is_Counting(MainCycle_Timer)) break;
 
         // 刚进入COOLING，开始倒计时
-        if (OrdinaryTimer_If_Reset(MainCycle_Timer)) {
-          send_auto_bluetooth(distance, angle);
+        if (OrdinaryTimer_is_Reset(MainCycle_Timer)) {
           OrdinaryTimer_SetCycle_ms(MainCycle_Timer, cooling_time_ms);
         }
 
         // 倒计时完毕
-        if (OrdinaryTimer_If_CountCplt(MainCycle_Timer)) {
+        if (OrdinaryTimer_is_CountCplt(MainCycle_Timer)) {
           OrdinaryTimer_Reset(MainCycle_Timer);
           StateMachine = PAUSE_AND_EVENT_HANDLE;
         }
@@ -422,11 +422,8 @@ void StartOledTask(void *argument)
         LED_toggle(LedBlue);
         ENABLE_OLED = 1 - ENABLE_OLED;
 
-        if (ENABLE_OLED) {
-          OLED_REFRESH_REQUEST = 1;
-        } else {
-          OLED_CLEAR_REQUEST = 1;
-        }
+        if (ENABLE_OLED) OLED_REFRESH_REQUEST = 1;
+        else OLED_CLEAR_REQUEST = 1;
             
         while (KEY2_IS_PRESSED());
       }
@@ -439,6 +436,7 @@ void StartOledTask(void *argument)
       OLED_ShowFrame();
     }
     else if (OLED_REFRESH_REQUEST && ENABLE_OLED) {
+      OLED_REFRESH_REQUEST = 0;
       print_sensor_data_on_oled(distance, angle);
     }
     osDelay(1);
@@ -459,27 +457,26 @@ void StartBluetoothTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
+    if (Usart_is_RxCplt(BlueTooth)) {
+      Usart_mark_RxCplt(BlueTooth, 0);
+      bluetooth_msg_handler(BlueTooth);
+      Usart_ReceiveToIdle_DMA_noHT(BlueTooth);
+    }
+
+    if (Usart_is_TxCplt(BlueTooth)
+        && osMessageQueueGetCount(sensor_dataHandle) == 2
+       )
+    {
+      Usart_mark_TxCplt(BlueTooth, 0);
+      float d = 0;
+      float a = 0;
+      osMessageQueueGet(sensor_dataHandle, &d, 0, 0);
+      osMessageQueueGet(sensor_dataHandle, &a, 0, 0);
+      send_auto_bluetooth(d, a);
+    }
     osDelay(1);
   }
   /* USER CODE END StartBluetoothTask */
-}
-
-/* USER CODE BEGIN Header_StartEventTask */
-/**
-* @brief Function implementing the EventTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartEventTask */
-void StartEventTask(void *argument)
-{
-  /* USER CODE BEGIN StartEventTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END StartEventTask */
 }
 
 /* Private application code --------------------------------------------------*/

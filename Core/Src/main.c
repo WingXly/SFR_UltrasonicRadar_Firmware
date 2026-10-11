@@ -68,8 +68,7 @@ volatile int OLED_CLEAR_REQUEST = 0;               // 请求OLED屏幕清空标�
 volatile int MODIFY_STEP_OPT_TYPE = 0;             // 修改step值的操作类型（1:set 2:add 3:remove）
 volatile int MODIFY_STEP_VALUE = 1;                // 修改step值的具体数字
 
-// 冷却时间
-volatile float cooling_time_ms = 30.0f;
+volatile float cooling_time_ms = 30.0f;            // 冷却时间
 
 // 蓝牙串口
 Usart * BlueTooth = NULL;
@@ -172,7 +171,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
        && StateMachine == MEASURING )
   {
     CaptureTimer_SaveCounter_both(Capture_Timer);
-    CaptureTimer_Mark_CaptureCplt(Capture_Timer, 1);
+    CaptureTimer_mark_CaptureCplt(Capture_Timer, 1);
   }
 }
 

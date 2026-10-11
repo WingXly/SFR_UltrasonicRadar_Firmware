@@ -39,9 +39,9 @@ TIM_TypeDef * TimerEp_GetInstance(Timer * this);
 void OrdinaryTimer_SetCycle(OrdinaryTimer * this, int cycle);
 void OrdinaryTimer_CountDown(OrdinaryTimer * this);
 void OrdinaryTimer_Reset(OrdinaryTimer * this);
-int OrdinaryTimer_If_Reset(OrdinaryTimer * this);
-int OrdinaryTimer_If_Counting(OrdinaryTimer * this);
-int OrdinaryTimer_If_CountCplt(OrdinaryTimer * this);
+int OrdinaryTimer_is_Reset(OrdinaryTimer * this);
+int OrdinaryTimer_is_Counting(OrdinaryTimer * this);
+int OrdinaryTimer_is_CountCplt(OrdinaryTimer * this);
 void OrdinaryTimer_SetCycle_ms(OrdinaryTimer * this, float time_ms);
 
 // PWM定时器
@@ -73,8 +73,8 @@ void CaptureTimer_SaveCounter_Auto_2(CaptureTimer * this);
 void CaptureTimer_SaveCounter_both(CaptureTimer * this);
 int CaptureTimer_LoadCounter_1(CaptureTimer * this);
 int CaptureTimer_LoadCounter_2(CaptureTimer * this);
-void CaptureTimer_Mark_CaptureCplt(CaptureTimer * this, int is_it_complete);
-int CaptureTimer_If_CaptureCplt(CaptureTimer * this);
+void CaptureTimer_mark_CaptureCplt(CaptureTimer * this, int is_it_complete);
+int CaptureTimer_is_CaptureCplt(CaptureTimer * this);
 
 
 #endif // __TIMER_EP_H

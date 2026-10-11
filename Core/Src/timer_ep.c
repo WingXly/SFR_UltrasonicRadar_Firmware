@@ -191,7 +191,7 @@ void OrdinaryTimer_Reset(OrdinaryTimer * this)
 
 
 /*检测一个普通定时器是否已经重置*/
-int OrdinaryTimer_If_Reset(OrdinaryTimer * this)
+int OrdinaryTimer_is_Reset(OrdinaryTimer * this)
 {
     if (this->cycle == 0 && this->AC_flag == 0) {
         return 1;
@@ -202,7 +202,7 @@ int OrdinaryTimer_If_Reset(OrdinaryTimer * this)
 
 
 /*检测一个普通定时器是否正在倒计时*/
-int OrdinaryTimer_If_Counting(OrdinaryTimer * this)
+int OrdinaryTimer_is_Counting(OrdinaryTimer * this)
 {
     if (this->cycle > 0) {
         return 1;
@@ -213,7 +213,7 @@ int OrdinaryTimer_If_Counting(OrdinaryTimer * this)
 
 
 /*检测一个普通定时器是否倒计时完毕*/
-int OrdinaryTimer_If_CountCplt(OrdinaryTimer * this)
+int OrdinaryTimer_is_CountCplt(OrdinaryTimer * this)
 {
     if (this->cycle == 0 && this->AC_flag == 1) {
         return 1;
@@ -413,14 +413,14 @@ int CaptureTimer_LoadCounter_2(CaptureTimer * this)
 
 
 /*将一个捕获定时器的状态设置为已完成捕获或未完成捕获*/
-void CaptureTimer_Mark_CaptureCplt(CaptureTimer * this, int is_it_complete)
+void CaptureTimer_mark_CaptureCplt(CaptureTimer * this, int is_it_complete)
 {
     this->CAPTURE_DONE = is_it_complete;
 }
 
 
 /*读取一个捕获定时器的状态（已完成捕获或未完成捕获）*/
-int CaptureTimer_If_CaptureCplt(CaptureTimer * this)
+int CaptureTimer_is_CaptureCplt(CaptureTimer * this)
 {
     return this->CAPTURE_DONE;
 }

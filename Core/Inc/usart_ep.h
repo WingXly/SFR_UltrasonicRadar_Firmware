@@ -14,10 +14,12 @@ void Usart_Free(Usart * this);
 uint8_t * Usart_pReceiveData(Usart * this);
 UART_HandleTypeDef * Usart_pHuart(Usart * this);
 
-int Usart_If_RxCplt(Usart * this);
-int Usart_If_TxCplt(Usart * this);
-void Usart_Mark_RxCplt(Usart * this, int Cplt);
-void Usart_Mark_TxCplt(Usart * this, int Cplt);
+int Usart_is_RxCplt(Usart * this);
+int Usart_is_TxCplt(Usart * this);
+void Usart_mark_RxCplt(Usart * this, int Cplt);
+void Usart_mark_TxCplt(Usart * this, int Cplt);
+int Usart_Get_RxSize(Usart * this);
+void Usart_mark_RxSize(Usart * this, int size);
 
 void Usart_ReceiveToIdle_DMA_noHT(Usart * this);
 void Usart_ReceiveToIdle_DMA_HT(Usart * this);
