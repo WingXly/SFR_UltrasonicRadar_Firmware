@@ -132,7 +132,7 @@ void AutoCompare_setStep( AutoCompare_TypeDef * this,
   
   if (this->step < 0) {
     this->step = step_old;
-    send_error_bluetooth(0x00);
+    awake_bt_send_error(0x00);
   } 
 }
 
@@ -181,6 +181,16 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart == Usart_pHuart(bluetooth)) {
         Usart_mark_TxCplt(bluetooth, 1);
+    }
+}
+
+
+/*串口Rx回调函数*/
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
+{
+    if (huart == Usart_pHuart(bluetooth)) {
+        Usart_mark_RxCplt(bluetooth, 1);
+        Usart_mark_RxSize(bluetooth, Size);
     }
 }
 

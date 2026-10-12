@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "led.h"
+#include "main.h"
 #include "stm32f1xx_hal_def.h"
 #include "usart_ep.h"
 #include "stm32f1xx_hal_uart.h"
@@ -18,49 +19,8 @@
 #include "flags.h"
 
 
-/*串口Rx回调函数*/
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
-{
-    if (huart == Usart_pHuart(bluetooth)) {
-        Usart_mark_RxCplt(bluetooth, 1);
-        Usart_mark_RxSize(bluetooth, Size);
-    }
-}
-
-
-/*
-将距离和角度通过串口发送至电脑。采用二进制帧结构发布通知：
-
-uint8_t sendMsg[9]:
-帧头         长度    角度     距离        校验      帧尾
-0xAA 0x55    N      int16    uint16      XOR      0x0D
-0    1       2      3   4    5    6      7        8
-
-角度单位：度 -> 0.01度
-距离单位：mm -> mm
-*/
-void send_sensor_data_bluetooth(float distance_mm, float angle_deg)
-{
-    static uint8_t sendMsg[9] = "";
-
-    sendMsg[0] = FRAME_HEADER_1;                                                 // 帧头1
-    sendMsg[1] = FRAME_HEADER_2;                                                 // 帧头2
-    sendMsg[2] = 5;                                                              // 从有效数据开始到校验和位的长度
-    // 以0.01度为单位发送角度数据
-    sendMsg[3] = (int16_t)(angle_deg * 100) >> 8;                                // 角度高字节
-    sendMsg[4] = (int16_t)(angle_deg * 100) & 0xFF;                              // 角度低字节
-    // 以1mm为单位发送距离数据
-    sendMsg[5] = (uint16_t)distance_mm >> 8;                                     // 距离高字节
-    sendMsg[6] = (uint16_t)distance_mm & 0xFF;                                   // 距离低字节
-    sendMsg[7] = sendMsg[2] ^ sendMsg[3] ^ sendMsg[4] ^ sendMsg[5] ^ sendMsg[6]; // 校验
-    sendMsg[8] = FRAME_END;                                                      // 帧尾
-
-    Usart_Transmit_DMA_noHT(bluetooth, sendMsg, 9);
-}
-
-
 /*解析来自蓝牙的命令*/
-void bluetooth_cmd_handler(Usart * from)
+void cmd_handler(Usart * from)
 {
     int len = Usart_Get_RxSize(from);
     uint8_t * cmd = Usart_pReceiveData(from);
@@ -114,7 +74,7 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
         }
         else
         {
-            send_error_bluetooth(0x00);
+            awake_bt_send_error(0x00);
         }
     }
     else if (cmd_type == 1) // 设置OLED屏幕的开或关
@@ -134,13 +94,13 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
         }
         else
         {
-            send_error_bluetooth(0x00);
+            awake_bt_send_error(0x00);
         }
     }
     else
     {
         // 输入的参数个数与指令不匹配
-        send_error_bluetooth(0x01);
+        awake_bt_send_error(0x01);
     }
 }
 
@@ -163,14 +123,45 @@ void command_handler_2para(uint16_t cmd_type, uint16_t para1, uint16_t para2)
     else
     {
         // 输入的参数个数与指令不匹配
-        send_error_bluetooth(0x01);
+        awake_bt_send_error(0x01);
     }
 
 }
 
 
+/*
+将距离和角度通过串口发送至电脑。采用二进制帧结构发布通知：
+
+uint8_t sendMsg[9]:
+帧头         长度    角度     距离        校验      帧尾
+0xAA 0x55    N      int16    uint16      XOR      0x0D
+0    1       2      3   4    5    6      7        8
+
+角度单位：度 -> 0.01度
+距离单位：mm -> mm
+*/
+void send_sensor_data(Usart * who_send_data, float distance_mm, float angle_deg)
+{
+    static uint8_t sendMsg[9] = "";
+
+    sendMsg[0] = FRAME_HEADER_1;                                                 // 帧头1
+    sendMsg[1] = FRAME_HEADER_2;                                                 // 帧头2
+    sendMsg[2] = 5;                                                              // 从有效数据开始到校验和位的长度
+    // 以0.01度为单位发送角度数据
+    sendMsg[3] = (int16_t)(angle_deg * 100) >> 8;                                // 角度高字节
+    sendMsg[4] = (int16_t)(angle_deg * 100) & 0xFF;                              // 角度低字节
+    // 以1mm为单位发送距离数据
+    sendMsg[5] = (uint16_t)distance_mm >> 8;                                     // 距离高字节
+    sendMsg[6] = (uint16_t)distance_mm & 0xFF;                                   // 距离低字节
+    sendMsg[7] = sendMsg[2] ^ sendMsg[3] ^ sendMsg[4] ^ sendMsg[5] ^ sendMsg[6]; // 校验
+    sendMsg[8] = FRAME_END;                                                      // 帧尾
+
+    Usart_Transmit_DMA_noHT(who_send_data, sendMsg, 9);
+}
+
+
 /*向蓝牙通知一个错误*/
-void send_error_bluetooth(uint16_t error_code)
+void send_error(Usart * who_send_data, uint16_t error_code)
 {
     static uint8_t sendMsg[9] = "";
 
@@ -184,5 +175,5 @@ void send_error_bluetooth(uint16_t error_code)
     sendMsg[7] = sendMsg[2] ^ sendMsg[3] ^ sendMsg[4] ^ sendMsg[5] ^ sendMsg[6];
     sendMsg[8] = FRAME_END;
 
-    Usart_Transmit_DMA_noHT(bluetooth, sendMsg, 9);
+    Usart_Transmit_DMA_noHT(who_send_data, sendMsg, 9);
 }

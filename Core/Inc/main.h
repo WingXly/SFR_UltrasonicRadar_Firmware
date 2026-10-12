@@ -60,6 +60,9 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim);
 float calc_distance_mm(int up_edge_number, int down_edge_number);
 void print_sensor_data_on_oled(float distance, float angle);
 
+void awake_bt_send_data(float data1, float data2);
+void awake_bt_send_error(uint16_t error_code);
+
 // class AutoCompare_TypeDef {
       typedef struct AutoCompare_TypeDef AutoCompare_TypeDef;
 

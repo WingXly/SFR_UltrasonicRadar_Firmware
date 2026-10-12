@@ -19,22 +19,15 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
-#include "flags.h"
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "dma.h"
-#include "i2c.h"
-#include "tim.h"
-#include "usart.h"
-#include "gpio.h"
 
 #include "led.h"
 #include "oled.h"
-#include "font.h"
 #include "timer_ep.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -90,14 +83,34 @@ const osThreadAttr_t BluetoothTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityHigh,
 };
-/* Definitions for sensor_data */
-osMessageQueueId_t sensor_dataHandle;
-const osMessageQueueAttr_t sensor_data_attributes = {
-  .name = "sensor_data"
+/* Definitions for bt_send_data */
+osMessageQueueId_t bt_send_dataHandle;
+const osMessageQueueAttr_t bt_send_data_attributes = {
+  .name = "bt_send_data"
+};
+/* Definitions for BtTaskWaker */
+osSemaphoreId_t BtTaskWakerHandle;
+const osSemaphoreAttr_t BtTaskWaker_attributes = {
+  .name = "BtTaskWaker"
 };
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
+
+
+void awake_bt_send_data(float data1, float data2)
+{
+  osMessageQueuePut(bt_send_dataHandle, &data1, 0, 0);
+  osMessageQueuePut(bt_send_dataHandle, &data2, 0, 0);
+  osSemaphoreRelease(bt_send_dataHandle);
+}
+
+
+void awake_bt_send_error(uint16_t error_code)
+{
+    awake_bt_send_data(-1.0f, error_code);
+}
+
 
 /* USER CODE END FunctionPrototypes */
 
@@ -121,6 +134,10 @@ void MX_FREERTOS_Init(void) {
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
 
+  /* Create the semaphores(s) */
+  /* creation of BtTaskWaker */
+  BtTaskWakerHandle = osSemaphoreNew(1, 0, &BtTaskWaker_attributes);
+
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
   /* USER CODE END RTOS_SEMAPHORES */
@@ -130,8 +147,8 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_TIMERS */
 
   /* Create the queue(s) */
-  /* creation of sensor_data */
-  sensor_dataHandle = osMessageQueueNew (2, sizeof(float), &sensor_data_attributes);
+  /* creation of bt_send_data */
+  bt_send_dataHandle = osMessageQueueNew (8, sizeof(float), &bt_send_data_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -244,7 +261,7 @@ void StartMainTask(void *argument)
           // 不允许冷却时间小于1us
           if (flags.cooling_time_ms < 0.001) {
             flags.cooling_time_ms = cooling_time_old;
-            send_error_bluetooth(0x00);
+            awake_bt_send_error(0x00);
           }
 
           params.modify_cooling_time_optType = 0;
@@ -311,8 +328,7 @@ void StartMainTask(void *argument)
         );
         OrdinaryTimer_Reset(main_cycle_timer);
         flags.oled_refresh_req = true;
-        osMessageQueuePut(sensor_dataHandle, &distance, 0, 0);
-        osMessageQueuePut(sensor_dataHandle, &angle, 0, 0);
+        awake_bt_send_data(distance, angle);
         flags.state_machine = COOLING;
         break;
 
@@ -361,7 +377,7 @@ void StartOledTask(void *argument)
     // event: 按按钮（KEY2）启用或禁用OLED输出
     if (KEY2_IS_PRESSED())
     {
-      HAL_Delay(10);
+      osDelay(10);
       if (KEY2_IS_PRESSED()) {
         LED_toggle(led_blue);
         flags.enable_oled = !flags.enable_oled;
@@ -404,24 +420,40 @@ void StartBluetoothTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
+    // 等待信号量释放
+    osSemaphoreAcquire(BtTaskWakerHandle, osWaitForever);
+    
     // event: 蓝牙接收完毕
     if (Usart_is_RxCplt(bluetooth))
     {
+      // 接收指令，然后执行
+      cmd_handler(bluetooth);
+
+      // 等待下一个命令
       Usart_mark_RxCplt(bluetooth, 0);
-      bluetooth_cmd_handler(bluetooth);
       Usart_ReceiveToIdle_DMA_noHT(bluetooth);
     }
 
-    // event: 蓝牙发送完毕
-    if (Usart_is_TxCplt(bluetooth)
-        && osMessageQueueGetCount(sensor_dataHandle) == 2 )
+    // event: 如果队列中有需要发送的东西，就发送它们
+    if (osMessageQueueGetCount(bt_send_dataHandle) >= 2 )
     {
-      Usart_mark_TxCplt(bluetooth, 0);
-      float d = 0;
-      float a = 0;
-      osMessageQueueGet(sensor_dataHandle, &d, 0, 0);
-      osMessageQueueGet(sensor_dataHandle, &a, 0, 0);
-      send_sensor_data_bluetooth(d, a);
+      // 获取将要发送的数据
+      float sendData_1 = 0;
+      float sendData_2 = 0;
+      osMessageQueueGet(bt_send_dataHandle, &sendData_1, 0, 0);
+      osMessageQueueGet(bt_send_dataHandle, &sendData_2, 0, 0);
+
+      // 判断发送的数据是传感器数据还是错误信息，然后发送
+      if (sendData_1 == -1.0f) {
+        if (sendData_2 < 0) sendData_2 = 1000;
+        send_error(bluetooth, (uint16_t)sendData_2);
+      } else {
+        send_sensor_data(bluetooth, sendData_1, sendData_2);
+      }
+
+      // 如果队列里还有数据，就再让蓝牙发送一次（不阻塞其他任务）
+      if (osMessageQueueGetCount(bt_send_dataHandle) >= 2 )
+        osSemaphoreRelease(BtTaskWakerHandle);
     }
 
     osDelay(1);

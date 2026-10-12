@@ -4,16 +4,16 @@
 #include "main.h"
 #include "usart_ep.h"
 
-/* 雷达二进制帧协议 */
+/* 二进制帧协议 */
 #define FRAME_HEADER_1 0xAA
 #define FRAME_HEADER_2 0x55
-#define FRAME_END     0x0D
+#define FRAME_END      0x0D
 
 
 void command_handler_1para(uint16_t cmd_type, uint16_t cmd_para);
 void command_handler_2para(uint16_t cmd_type, uint16_t para1, uint16_t para2);
-void send_sensor_data_bluetooth(float distance_mm, float angle_deg);
-void bluetooth_cmd_handler(Usart * from);
-void send_error_bluetooth(uint16_t error_code);
+void send_sensor_data(Usart * who_send_data, float distance_mm, float angle_deg);
+void cmd_handler(Usart * from);
+void send_error(Usart * who_send_data, uint16_t error_code);
 
 #endif
