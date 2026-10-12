@@ -3,8 +3,20 @@
  * @brief 串口的面向对象封装
  * @anchor WingXly
  * @version 1.0
- * @date 2026-10-03
- * @license MIT License
+ *
+ * @attention
+ * license MIT
+ *
+ * @note
+ * 使用流程:
+ * 1. 在任意位置声明一个串口：`Usart * my_usart = NULL;`
+ * 2. 在main()或其他函数中实例化，例如：`my_usart = Usart_Instantiate(&huart1, &hdma_usart1_rx, &hdma_usart1_tx);`
+ * 3. 在实例化之后使用方法，具体详见本文内容
+ * 4. 当无需使用一个实例时，将它销毁：`Usart_Free(my_usart);`
+ *
+ * @note
+ * 为保持封装，务必要在一个函数中实例化，而不是在将对象声明为全局变量时直接实例化。
+ *
  */
 #include "usart_ep.h"
 #include "stm32f1xx_hal_def.h"

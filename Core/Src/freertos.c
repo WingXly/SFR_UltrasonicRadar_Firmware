@@ -69,8 +69,11 @@ volatile int ENABLE_OLED = 0;                      // 是否启用OLED输出（I
 volatile int OLED_REFRESH_REQUEST = 0;             // 请求OLED屏幕刷新标志位
 volatile int OLED_CLEAR_REQUEST = 0;               // 请求OLED屏幕清空标志位
 
-volatile int MODIFY_STEP_OPT_TYPE = 0;             // 修改step值的操作类型（1:set 2:add 3:remove）
-volatile int MODIFY_STEP_VALUE = 1;                // 修改step值的具体数字
+volatile int modify_step_optType = 0;             // 修改step值的操作类型（1:set 2:add 3:remove）
+volatile int modify_step_value = 1;                // 修改step值的具体数字
+
+volatile int modify_cooling_time_optType = 0;     // 修改冷却时间的操作类型（1:set 2:add 3:remove）
+volatile int modify_cooling_time_value = 0;        // 修改冷却时间的具体数数字
 
 volatile float cooling_time_ms = 30.0f;            // 冷却时间
 
@@ -306,10 +309,31 @@ void StartMainTask(void *argument)
         }
 
         // event: 更改compare step
-         if (1 <= MODIFY_STEP_OPT_TYPE && MODIFY_STEP_OPT_TYPE <= 3) {
-          AutoCompare_setStep(auto_compare, MODIFY_STEP_OPT_TYPE, MODIFY_STEP_VALUE);
-          MODIFY_STEP_OPT_TYPE = 0;
-         }
+        if (1 <= modify_step_optType && modify_step_optType <= 3) {
+          AutoCompare_setStep(auto_compare, modify_step_optType, modify_step_value);
+          modify_step_optType = 0;
+        }
+
+        //event: 更改cooling_time
+        if (1 <= modify_cooling_time_optType && modify_cooling_time_optType <=3) {
+          float cooling_time_old = cooling_time_ms;
+          
+          if (modify_cooling_time_optType == 1) {        // set
+              cooling_time_ms = (float)modify_cooling_time_value / 1000;
+          } else if (modify_cooling_time_optType == 2) { // add
+              cooling_time_ms += (float)modify_cooling_time_value / 1000;
+          } else if (modify_cooling_time_optType == 3) { // remove
+              cooling_time_ms -= (float)modify_cooling_time_value / 1000;
+          }
+
+          // 不允许冷却时间小于1us
+          if (cooling_time_ms < 0.001) {
+            cooling_time_ms = cooling_time_old;
+            send_error_bluetooth(0x00);
+          }
+
+          modify_cooling_time_optType = 0;
+        }
 
         // 如果不处于暂停，则进行下一步
         if (PAUSE == 0) {
@@ -456,7 +480,7 @@ void StartBluetoothTask(void *argument)
   {
     if (Usart_is_RxCplt(bluetooth)) {
       Usart_mark_RxCplt(bluetooth, 0);
-      bluetooth_msg_handler(bluetooth);
+      bluetooth_cmd_handler(bluetooth);
       Usart_ReceiveToIdle_DMA_noHT(bluetooth);
     }
 
@@ -469,7 +493,7 @@ void StartBluetoothTask(void *argument)
       float a = 0;
       osMessageQueueGet(sensor_dataHandle, &d, 0, 0);
       osMessageQueueGet(sensor_dataHandle, &a, 0, 0);
-      send_auto_bluetooth(d, a);
+      send_sensor_data_bluetooth(d, a);
     }
     osDelay(1);
   }

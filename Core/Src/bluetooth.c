@@ -1,7 +1,16 @@
+/**
+ * @file bluetooth.c
+ * @brief 有关蓝牙收发的代码
+ * @anchor WingXly
+ *
+ * @attention
+ * license MIT
+ */
 #include "bluetooth.h"
 #include <stdint.h>
 #include <string.h>
 #include "led.h"
+#include "stm32f1xx_hal_def.h"
 #include "usart_ep.h"
 #include "stm32f1xx_hal_uart.h"
 
@@ -13,8 +22,10 @@ extern volatile int ENABLE_OLED;
 extern volatile int OLED_CLEAR_REQUEST;
 extern volatile int OLED_REFRESH_REQUEST;
 extern volatile float cooling_time_ms;
-extern volatile int MODIFY_STEP_OPT_TYPE;
-extern volatile int MODIFY_STEP_VALUE;
+extern volatile int modify_step_optType;
+extern volatile int modify_step_value;
+extern volatile int modify_cooling_time_optType;
+extern volatile int modify_cooling_time_value;
 extern LED * led_red;
 extern LED * led_green;
 extern LED * led_blue;
@@ -28,6 +39,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
     }
 }
 
+
 /*串口Rx回调函数*/
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
@@ -36,6 +48,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
         Usart_mark_RxSize(bluetooth, Size);
     }
 }
+
 
 /*
 将距离和角度通过串口发送至电脑。采用二进制帧结构发布通知：
@@ -48,28 +61,28 @@ uint8_t sendMsg[9]:
 角度单位：度 -> 0.01度
 距离单位：mm -> mm
 */
-void send_auto_bluetooth(float distance_mm, float angle_deg)
+void send_sensor_data_bluetooth(float distance_mm, float angle_deg)
 {
     static uint8_t sendMsg[9] = "";
 
-    sendMsg[0] = FRAME_HEADER_1;
-    sendMsg[1] = FRAME_HEADER_2;
-    sendMsg[2] = 5;                                 // 长度
+    sendMsg[0] = FRAME_HEADER_1;                                                 // 帧头1
+    sendMsg[1] = FRAME_HEADER_2;                                                 // 帧头2
+    sendMsg[2] = 5;                                                              // 从有效数据开始到校验和位的长度
     // 以0.01度为单位发送角度数据
-    sendMsg[3] = (int16_t)(angle_deg * 100) >> 8;   // 角度高字节
-    sendMsg[4] = (int16_t)(angle_deg * 100) & 0xFF; // 角度低字节
+    sendMsg[3] = (int16_t)(angle_deg * 100) >> 8;                                // 角度高字节
+    sendMsg[4] = (int16_t)(angle_deg * 100) & 0xFF;                              // 角度低字节
     // 以1mm为单位发送距离数据
-    sendMsg[5] = (uint16_t)distance_mm >> 8;        // 距离高字节
-    sendMsg[6] = (uint16_t)distance_mm & 0xFF;      // 距离低字节
+    sendMsg[5] = (uint16_t)distance_mm >> 8;                                     // 距离高字节
+    sendMsg[6] = (uint16_t)distance_mm & 0xFF;                                   // 距离低字节
     sendMsg[7] = sendMsg[2] ^ sendMsg[3] ^ sendMsg[4] ^ sendMsg[5] ^ sendMsg[6]; // 校验
-    sendMsg[8] = FRAME_END;                              // 帧尾
+    sendMsg[8] = FRAME_END;                                                      // 帧尾
 
     Usart_Transmit_DMA_noHT(bluetooth, sendMsg, 9);
 }
 
 
 /*解析来自蓝牙的命令*/
-void bluetooth_msg_handler(Usart * from)
+void bluetooth_cmd_handler(Usart * from)
 {
     int len = Usart_Get_RxSize(from);
     uint8_t * cmd = Usart_pReceiveData(from);
@@ -103,6 +116,7 @@ void bluetooth_msg_handler(Usart * from)
     }
 }
 
+
 /*执行来自蓝牙的单参数命令（需要先解析）*/
 void command_handler_1para(uint16_t cmd_type, uint16_t para)
 {
@@ -120,6 +134,10 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
             LED_off(led_green);
             LED_on(led_red);
         }
+        else
+        {
+            send_error_bluetooth(0x00);
+        }
     }
     else if (cmd_type == 1) // 设置OLED屏幕的开或关
     {
@@ -136,10 +154,15 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
             OLED_REFRESH_REQUEST = 1;
             LED_on(led_blue);
         }
+        else
+        {
+            send_error_bluetooth(0x00);
+        }
     }
-    else                    // 报错
+    else
     {
-        send_error_bluetooth();
+        // 输入的参数个数与指令不匹配
+        send_error_bluetooth(0x01);
     }
 }
 
@@ -149,38 +172,39 @@ void command_handler_2para(uint16_t cmd_type, uint16_t para1, uint16_t para2)
 {
     if (cmd_type == 2)      // 设置 compare_step。将para一比一转换
     {
-        // 只发送修改请求，具体修改逻辑在main()中实现
-        MODIFY_STEP_OPT_TYPE = para1;
-        MODIFY_STEP_VALUE = para2;
+        // 只发送修改请求，具体逻辑在freertos.c/StartMainTask()中实现
+        modify_step_optType = para1;
+        modify_step_value = para2;
     }
     else if (cmd_type == 3) // 设置 cooling_time_ms。将para除以1000后转换
     {
-        float cooling_time_ms_old = cooling_time_ms;
-        if (para1 == 1) {        // set
-            cooling_time_ms = (float)para2 / 1000;
-        } else if (para1 == 2) { // add
-            cooling_time_ms += (float)para2 / 1000;
-        } else if (para1 == 3) { // remove
-            cooling_time_ms -= (float)para2 / 1000;
-        }
-
-        if (cooling_time_ms < 0.001) {
-            cooling_time_ms = cooling_time_ms_old;
-            send_error_bluetooth();
-        }
+        // 只发送修改请求，具体逻辑在freertos.c/StartMainTask()中实现
+        modify_cooling_time_optType = para1;
+        modify_cooling_time_value = para2;
     }
-    else                    // 报错
+    else
     {
-        send_error_bluetooth();
+        // 输入的参数个数与指令不匹配
+        send_error_bluetooth(0x01);
     }
 
 }
 
 
 /*向蓝牙通知一个错误*/
-void send_error_bluetooth()
+void send_error_bluetooth(uint16_t error_code)
 {
-    static char sendMsg[50] = "Error";
-    Usart_mark_TxCplt(bluetooth, 0);
-    Usart_Transmit_DMA_noHT(bluetooth, (uint8_t*)sendMsg, strlen(sendMsg));
+    static uint8_t sendMsg[9] = "";
+
+    sendMsg[0] = FRAME_HEADER_1,
+    sendMsg[1] = FRAME_HEADER_2,
+    sendMsg[2] = 0xFF,
+    sendMsg[3] = 0xFF;
+    sendMsg[4] = 0xFF,
+    sendMsg[5] = error_code >> 8;
+    sendMsg[6] = error_code & 0xFF;
+    sendMsg[7] = sendMsg[2] ^ sendMsg[3] ^ sendMsg[4] ^ sendMsg[5] ^ sendMsg[6];
+    sendMsg[8] = FRAME_END;
+
+    Usart_Transmit_DMA_noHT(bluetooth, sendMsg, 9);
 }

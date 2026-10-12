@@ -65,8 +65,11 @@ extern volatile int ENABLE_OLED;                   // 是否启用OLED输出（I
 extern volatile int OLED_REFRESH_REQUEST;          // 请求OLED屏幕刷新标志位
 extern volatile int OLED_CLEAR_REQUEST;            // 请求OLED屏幕清空标志位
 
-extern volatile int MODIFY_STEP_OPT_TYPE;          // 修改step值的操作类型（1:set 2:add 3:remove）
-extern volatile int MODIFY_STEP_VALUE;             // 修改step值的具体数字
+extern volatile int modify_step_optType;           // 修改step值的操作类型（1:set 2:add 3:remove）
+extern volatile int modify_step_value;             // 修改step值的具体数字
+
+extern volatile int modify_cooling_time_optType;   // 修改冷却时间的操作类型（1:set 2:add 3:remove）
+extern volatile int modify_cooling_time_value;     // 修改冷却时间的具体数数字
 
 extern volatile float cooling_time_ms;             // 冷却时间
 
@@ -133,6 +136,8 @@ int AutoCompare_next(AutoCompare_TypeDef * this)
 void AutoCompare_setStep( AutoCompare_TypeDef * this,
                           int operation_type, int value )
 {
+  int step_old = this->step;
+
   if (operation_type == 1) {
     this->step = value;
   } else if (operation_type == 2) {
@@ -141,7 +146,10 @@ void AutoCompare_setStep( AutoCompare_TypeDef * this,
     this->step -= value;
   }
   
-  if (this->step < 0) this->step = 0;
+  if (this->step < 0) {
+    this->step = step_old;
+    send_error_bluetooth(0x00);
+  } 
 }
 
 

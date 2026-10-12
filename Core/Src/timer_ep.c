@@ -3,8 +3,26 @@
  * @brief 定时器的面向对象封装
  * @anchor WingXly
  * @version 1.0
- * @date 2026-10-03
- * @license MIT License
+ *
+ * @attention
+ * license MIT
+ *
+ * @note
+ * 本文件按用途提供了三种不同类型的定时器：
+ * 1. 普通定时器（OrdinaryTimer），用于倒计时
+ * 2. PWM定时器（PwmTimer），用于控制一个Channel的compare输出
+ * 3. 捕获定时器（CaptureTimer）
+ *
+ * @note
+ * 使用流程:
+ * 1. 在任意位置声明一个定时器，例如：`OrdinaryTimer * my_ord_timer = NULL;`
+ * 2. 在main()或其他函数中实例化，例如：`my_ord_timer = OrdinaryTimer_Instantiate(&htim1, 72);`
+ * 3. 在实例化之后使用函数控制定时器，具体详见本文代码
+ * 4. 当无需使用一个实例时，将它销毁：`TimerEp_Free((Timer*)my_ord_timer);`
+ *
+ * @note
+ * 为保持封装，务必要在一个函数中实例化，而不是在将对象声明为全局变量时直接实例化。
+ *
  */
 #include "timer_ep.h"
 #include "stm32f1xx_hal_tim.h"
