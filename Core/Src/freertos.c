@@ -167,73 +167,7 @@ void MX_FREERTOS_Init(void) {
 void StartMainTask(void *argument)
 {
   /* USER CODE BEGIN StartMainTask */
-
-  // 实例化LED小灯
-  led_red = LED_Instantiate(LED_RED_GPIO_Port, LED_RED_Pin);
-  led_green = LED_Instantiate(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
-  led_blue = LED_Instantiate(LED_BLUE_GPIO_Port, LED_BLUE_Pin);
-
-
-  // 实例化定时器
-  capture_timer = CaptureTimer_Instantiate(
-    &htim1,
-    72,
-    HC_SR04_Trig_GPIO_Port,
-    HC_SR04_Trig_Pin,
-    TIM_CHANNEL_3,
-    TIM_CHANNEL_4,
-    HAL_TIM_ACTIVE_CHANNEL_4
-  );
-
-  main_cycle_timer = OrdinaryTimer_Instantiate(
-    &htim3,
-    72
-  );
-
-  servo_pwm_timer = PwmTimer_Instantiate(
-    &htim4,
-    72,
-    TIM_CHANNEL_3,
-    1
-  );
-
-
-  // 实例化蓝牙串口
-  extern DMA_HandleTypeDef hdma_usart3_rx;
-  extern DMA_HandleTypeDef hdma_usart3_tx;
-  bluetooth = Usart_Instantiate(
-    &huart3,
-    &hdma_usart3_rx,
-    &hdma_usart3_tx
-  );
-
-
-  // 实例化AutoCompare
-  AutoCompare_TypeDef ac_ = {
-    .compare     = PWMSERVO_MIN_COMPARE,
-    .multiplier  = 1,
-    .step        = 1,
-    .compare_min = PWMSERVO_MIN_COMPARE,
-    .compare_max = PWMSERVO_MAX_COMPARE
-  };
-  AutoCompare_TypeDef * auto_compare = &ac_;
-
-
-  // 启动外设
-  osDelay(20);
-
-  CaptureTimer_Init(capture_timer);
-  OrdinaryTimer_Init(main_cycle_timer);
-  PwmTimer_Init(servo_pwm_timer);
-
-  OLED_Init();
-  OLED_NewFrame();
-  OLED_PrintString(0, 0, "Start", &font16x16, OLED_COLOR_NORMAL);
-  OLED_ShowFrame();
-
-  
   /* Infinite loop */
-
   for(;;)
   {
     // 遍历状态机

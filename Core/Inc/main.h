@@ -61,18 +61,13 @@ float calc_distance_mm(int up_edge_number, int down_edge_number);
 void print_sensor_data_on_oled(float distance, float angle);
 
 // class AutoCompare_TypeDef {
-      typedef struct {
-        int compare;
-        int multiplier;
-        int step;
-        int compare_min;
-        int compare_max;
-      } AutoCompare_TypeDef;
-      
+      typedef struct AutoCompare_TypeDef AutoCompare_TypeDef;
+
       int AutoCompare_next(AutoCompare_TypeDef * this);
       void AutoCompare_setStep( AutoCompare_TypeDef * this,
                                 int operation_type, int value );
 // }
+extern AutoCompare_TypeDef * auto_compare;
 
 /* USER CODE END EFP */
 

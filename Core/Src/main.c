@@ -91,8 +91,14 @@ void print_sensor_data_on_oled(float distance, float angle)
 }
 
 
-// AutoCompare_TypeDef定义在main.h
-
+// class AutoCompare_TypeDef {}
+struct AutoCompare_TypeDef{
+        int compare;
+        int multiplier;
+        int step;
+        int compare_min;
+        int compare_max;
+};
 
 /*计算下一个compare值并返回计算结果*/
 int AutoCompare_next(AutoCompare_TypeDef * this)
@@ -129,6 +135,16 @@ void AutoCompare_setStep( AutoCompare_TypeDef * this,
     send_error_bluetooth(0x00);
   } 
 }
+
+// 实例化AutoCompare
+AutoCompare_TypeDef ac_ = {
+  .compare     = PWMSERVO_MIN_COMPARE,
+  .multiplier  = 1,
+  .step        = 1,
+  .compare_min = PWMSERVO_MIN_COMPARE,
+  .compare_max = PWMSERVO_MAX_COMPARE
+};
+AutoCompare_TypeDef * auto_compare = &ac_;
 
 
 /* USER CODE END PFP */
@@ -207,6 +223,60 @@ int main(void)
   MX_TIM3_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
+
+
+  // 实例化LED小灯
+  led_red = LED_Instantiate(LED_RED_GPIO_Port, LED_RED_Pin);
+  led_green = LED_Instantiate(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
+  led_blue = LED_Instantiate(LED_BLUE_GPIO_Port, LED_BLUE_Pin);
+
+
+  // 实例化定时器
+  capture_timer = CaptureTimer_Instantiate(
+    &htim1,
+    72,
+    HC_SR04_Trig_GPIO_Port,
+    HC_SR04_Trig_Pin,
+    TIM_CHANNEL_3,
+    TIM_CHANNEL_4,
+    HAL_TIM_ACTIVE_CHANNEL_4
+  );
+
+  main_cycle_timer = OrdinaryTimer_Instantiate(
+    &htim3,
+    72
+  );
+
+  servo_pwm_timer = PwmTimer_Instantiate(
+    &htim4,
+    72,
+    TIM_CHANNEL_3,
+    1
+  );
+
+
+  // 实例化蓝牙串口
+  extern DMA_HandleTypeDef hdma_usart3_rx;
+  extern DMA_HandleTypeDef hdma_usart3_tx;
+  bluetooth = Usart_Instantiate(
+    &huart3,
+    &hdma_usart3_rx,
+    &hdma_usart3_tx
+  );
+
+
+  // 启动外设
+  osDelay(20);
+
+  CaptureTimer_Init(capture_timer);
+  OrdinaryTimer_Init(main_cycle_timer);
+  PwmTimer_Init(servo_pwm_timer);
+
+  OLED_Init();
+  OLED_NewFrame();
+  OLED_PrintString(0, 0, "Start", &font16x16, OLED_COLOR_NORMAL);
+  OLED_ShowFrame();
+
 
   /* USER CODE END 2 */
 
