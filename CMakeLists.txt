@@ -56,6 +56,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Inc/bluetooth.h
     Core/Src/usart_ep.c
     Core/Inc/usart_ep.h
+    Core/Inc/flags.h
+    Core/Src/flags.c
     # Add user sources here
 )
 

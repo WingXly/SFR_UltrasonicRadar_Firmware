@@ -7,6 +7,7 @@
  * license MIT
  */
 #include "bluetooth.h"
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 #include "led.h"
@@ -14,30 +15,7 @@
 #include "usart_ep.h"
 #include "stm32f1xx_hal_uart.h"
 
-
-/* 以下变量定义在 main.c 中*/
-extern Usart * bluetooth;
-extern volatile int PAUSE;
-extern volatile int ENABLE_OLED;
-extern volatile int OLED_CLEAR_REQUEST;
-extern volatile int OLED_REFRESH_REQUEST;
-extern volatile float cooling_time_ms;
-extern volatile int modify_step_optType;
-extern volatile int modify_step_value;
-extern volatile int modify_cooling_time_optType;
-extern volatile int modify_cooling_time_value;
-extern LED * led_red;
-extern LED * led_green;
-extern LED * led_blue;
-
-
-/*串口Tx回调函数*/
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-{
-    if (huart == Usart_pHuart(bluetooth)) {
-        Usart_mark_TxCplt(bluetooth, 1);
-    }
-}
+#include "flags.h"
 
 
 /*串口Rx回调函数*/
@@ -124,13 +102,13 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
     {
         if (para == 0)      // 解除暂停
         {
-            PAUSE = 0;
+            flags.pause = false;
             LED_on(led_green);
             LED_off(led_red);
         }
         else if (para == 1) // 暂停
         {
-            PAUSE = 1;
+            flags.pause = true;
             LED_off(led_green);
             LED_on(led_red);
         }
@@ -143,15 +121,15 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
     {
         if (para == 0)      // 关闭OLED
         {
-            ENABLE_OLED = 0;
-            OLED_CLEAR_REQUEST = 1;
+            flags.enable_oled = false;
+            flags.oled_clear_req = true;
             LED_off(led_blue);
             
         }
         else if (para == 1) // 开启OLED
         {
-            ENABLE_OLED = 1;
-            OLED_REFRESH_REQUEST = 1;
+            flags.enable_oled = true;
+            flags.oled_refresh_req = true;
             LED_on(led_blue);
         }
         else
@@ -173,14 +151,14 @@ void command_handler_2para(uint16_t cmd_type, uint16_t para1, uint16_t para2)
     if (cmd_type == 2)      // 设置 compare_step。将para一比一转换
     {
         // 只发送修改请求，具体逻辑在freertos.c/StartMainTask()中实现
-        modify_step_optType = para1;
-        modify_step_value = para2;
+        params.modify_step_optType = para1;
+        params.modify_step_value = para2;
     }
     else if (cmd_type == 3) // 设置 cooling_time_ms。将para除以1000后转换
     {
         // 只发送修改请求，具体逻辑在freertos.c/StartMainTask()中实现
-        modify_cooling_time_optType = para1;
-        modify_cooling_time_value = para2;
+        params.modify_cooling_time_optType = para1;
+        params.modify_cooling_time_value = para2;
     }
     else
     {

@@ -35,6 +35,8 @@
 #include <sys/_intsup.h>
 #include "bluetooth.h"
 #include "usart_ep.h"
+
+#include "flags.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -57,34 +59,6 @@
 /* USER CODE BEGIN PV */
 
 // 全局标志位
-extern volatile StateMachine_TypeDef StateMachine; // 状态机
-
-extern volatile int PAUSE;                         // 是否暂停（IDLE默认暂停）
-extern volatile int ENABLE_OLED;                   // 是否启用OLED输出（IDLE默认不启用）
-
-extern volatile int OLED_REFRESH_REQUEST;          // 请求OLED屏幕刷新标志位
-extern volatile int OLED_CLEAR_REQUEST;            // 请求OLED屏幕清空标志位
-
-extern volatile int modify_step_optType;           // 修改step值的操作类型（1:set 2:add 3:remove）
-extern volatile int modify_step_value;             // 修改step值的具体数字
-
-extern volatile int modify_cooling_time_optType;   // 修改冷却时间的操作类型（1:set 2:add 3:remove）
-extern volatile int modify_cooling_time_value;     // 修改冷却时间的具体数数字
-
-extern volatile float cooling_time_ms;             // 冷却时间
-
-// 蓝牙串口
-extern Usart * bluetooth;
-
-// LED小灯
-extern LED * led_red;
-extern LED * led_green;
-extern LED * led_blue;
-
-// 定时器
-extern CaptureTimer  * capture_timer;
-extern OrdinaryTimer * main_cycle_timer;
-extern PwmTimer      * servo_pwm_timer;
 
 /* USER CODE END PV */
 
@@ -117,6 +91,9 @@ void print_sensor_data_on_oled(float distance, float angle)
 }
 
 
+// AutoCompare_TypeDef定义在main.h
+
+
 /*计算下一个compare值并返回计算结果*/
 int AutoCompare_next(AutoCompare_TypeDef * this)
 {
@@ -131,6 +108,7 @@ int AutoCompare_next(AutoCompare_TypeDef * this)
   this->compare += this->multiplier * this->step;
   return this->compare;
 }
+
 
 /*设置compare步进值（operation_type: set, add, remove）（不允许step为负数）*/
 void AutoCompare_setStep( AutoCompare_TypeDef * this,
@@ -175,11 +153,19 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
   // TIM1捕获上升和下降沿
   if ( htim->Instance == TimerEp_GetInstance((Timer*)capture_timer)
        && htim->Channel == CaptureTimer_GetActiveChannel(capture_timer)
-       && StateMachine == MEASURING )
+       && flags.state_machine == MEASURING )
   {
     CaptureTimer_SaveCounter_both(capture_timer);
-    CaptureTimer_mark_CaptureCplt(capture_timer, 1);
   }
+}
+
+
+/*串口Tx回调函数*/
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart == Usart_pHuart(bluetooth)) {
+        Usart_mark_TxCplt(bluetooth, 1);
+    }
 }
 
 

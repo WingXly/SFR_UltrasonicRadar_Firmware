@@ -19,6 +19,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
+#include "flags.h"
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
@@ -35,11 +36,14 @@
 #include "oled.h"
 #include "font.h"
 #include "timer_ep.h"
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/_intsup.h>
 #include "bluetooth.h"
 #include "usart_ep.h"
+
+#include "flags.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -59,36 +63,6 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
-
-// 全局标志位
-volatile StateMachine_TypeDef StateMachine = INIT; // 状态机
-
-volatile int PAUSE = 0;                            // 是否暂停（IDLE默认暂停）
-volatile int ENABLE_OLED = 0;                      // 是否启用OLED输出（IDLE默认不启用）
-
-volatile int OLED_REFRESH_REQUEST = 0;             // 请求OLED屏幕刷新标志位
-volatile int OLED_CLEAR_REQUEST = 0;               // 请求OLED屏幕清空标志位
-
-volatile int modify_step_optType = 0;             // 修改step值的操作类型（1:set 2:add 3:remove）
-volatile int modify_step_value = 1;                // 修改step值的具体数字
-
-volatile int modify_cooling_time_optType = 0;     // 修改冷却时间的操作类型（1:set 2:add 3:remove）
-volatile int modify_cooling_time_value = 0;        // 修改冷却时间的具体数数字
-
-volatile float cooling_time_ms = 30.0f;            // 冷却时间
-
-// 蓝牙串口
-Usart * bluetooth = NULL;
-
-// LED小灯
-LED * led_red   = NULL;
-LED * led_green = NULL;
-LED * led_blue  = NULL;
-
-// 定时器
-CaptureTimer  * capture_timer   = NULL;
-OrdinaryTimer * main_cycle_timer = NULL;
-PwmTimer      * servo_pwm_timer  = NULL;
 
 // 传感器数据
 float distance = 0;          // 距离（计算值）
@@ -263,7 +237,7 @@ void StartMainTask(void *argument)
   for(;;)
   {
     // 遍历状态机
-    switch (StateMachine)
+    switch (flags.state_machine)
     {
       case INIT:
         // 阻止HC-SR04在INIT状态下工作
@@ -272,7 +246,7 @@ void StartMainTask(void *argument)
         // 启动时暂停
         LED_off(led_green);
         LED_on(led_red);
-        PAUSE = 1;
+        flags.pause = true;
 
         // 启动时不启用OLED输出
         LED_off(led_blue);
@@ -291,53 +265,61 @@ void StartMainTask(void *argument)
         Usart_ReceiveToIdle_DMA_noHT(bluetooth);
 
         osDelay(100);
-        StateMachine = PAUSE_AND_EVENT_HANDLE;
+        flags.state_machine = PAUSE_AND_EVENT_HANDLE;
         break;
 
 
       case PAUSE_AND_EVENT_HANDLE:
         // event: 按按钮（KEY1）暂停或解除暂停
-        if (KEY1_IS_PRESSED()) {
+        if (KEY1_IS_PRESSED())
+        {
           osDelay(10);
           if (KEY1_IS_PRESSED()) {
             LED_toggle(led_green);
             LED_toggle(led_red);
-            PAUSE = 1 - PAUSE;
+            flags.pause = !flags.pause;
             
             while (KEY1_IS_PRESSED());
           }
         }
 
         // event: 更改compare step
-        if (1 <= modify_step_optType && modify_step_optType <= 3) {
-          AutoCompare_setStep(auto_compare, modify_step_optType, modify_step_value);
-          modify_step_optType = 0;
+        if (1 <= params.modify_step_optType && params.modify_step_optType <= 3)
+        {
+          AutoCompare_setStep(
+            auto_compare,
+            params.modify_step_optType,
+            params.modify_step_value
+          );
+          params.modify_step_optType = 0;
         }
 
         //event: 更改cooling_time
-        if (1 <= modify_cooling_time_optType && modify_cooling_time_optType <=3) {
-          float cooling_time_old = cooling_time_ms;
+        if (1 <= params.modify_cooling_time_optType && params.modify_cooling_time_optType <=3)
+        {
+          float cooling_time_old = flags.cooling_time_ms;
           
-          if (modify_cooling_time_optType == 1) {        // set
-              cooling_time_ms = (float)modify_cooling_time_value / 1000;
-          } else if (modify_cooling_time_optType == 2) { // add
-              cooling_time_ms += (float)modify_cooling_time_value / 1000;
-          } else if (modify_cooling_time_optType == 3) { // remove
-              cooling_time_ms -= (float)modify_cooling_time_value / 1000;
+          if (params.modify_cooling_time_optType == 1) {        // set
+              flags.cooling_time_ms = (float)params.modify_cooling_time_value / 1000;
+          } else if (params.modify_cooling_time_optType == 2) { // add
+              flags.cooling_time_ms += (float)params.modify_cooling_time_value / 1000;
+          } else if (params.modify_cooling_time_optType == 3) { // remove
+              flags.cooling_time_ms -= (float)params.modify_cooling_time_value / 1000;
           }
 
           // 不允许冷却时间小于1us
-          if (cooling_time_ms < 0.001) {
-            cooling_time_ms = cooling_time_old;
+          if (flags.cooling_time_ms < 0.001) {
+            flags.cooling_time_ms = cooling_time_old;
             send_error_bluetooth(0x00);
           }
 
-          modify_cooling_time_optType = 0;
+          params.modify_cooling_time_optType = 0;
         }
 
         // 如果不处于暂停，则进行下一步
-        if (PAUSE == 0) {
-          StateMachine = TRIG_UP_AND_DOWN;
+        if (flags.pause == false)
+        {
+          flags.state_machine = TRIG_UP_AND_DOWN;
         }
         break;
 
@@ -347,18 +329,20 @@ void StartMainTask(void *argument)
         if (OrdinaryTimer_is_Counting(main_cycle_timer)) break;
         
         // 刚进入此状态，上拉Trig+开始倒计时
-        if (OrdinaryTimer_is_Reset(main_cycle_timer)) {
+        if (OrdinaryTimer_is_Reset(main_cycle_timer))
+        {
           CaptureTimer_mark_CaptureCplt(capture_timer, 0);
           CaptureTimer_TriggerUp(capture_timer);
           OrdinaryTimer_SetCycle_ms(main_cycle_timer, TRIG_DURATION_ms);
         }
 
         // 倒计时完毕，将Trig下拉，开始捕获
-        if (OrdinaryTimer_is_CountCplt(main_cycle_timer)) {
+        if (OrdinaryTimer_is_CountCplt(main_cycle_timer))
+        {
           TimerEp_SetCounter((Timer *)capture_timer, 0); // 将TIM1清零，防止测量时自动重装载
           CaptureTimer_TriggerDown(capture_timer); // 下拉既代表开始捕获
           OrdinaryTimer_Reset(main_cycle_timer); // 重置计时器
-          StateMachine = MEASURING;
+          flags.state_machine = MEASURING;
         }
         break;
 
@@ -366,7 +350,7 @@ void StartMainTask(void *argument)
       case MEASURING:
         // 如果捕获完毕
         if (CaptureTimer_is_CaptureCplt(capture_timer)) {
-          StateMachine = PROCESSING;
+          flags.state_machine = PROCESSING;
         }
         break;
 
@@ -382,7 +366,7 @@ void StartMainTask(void *argument)
           PWMSERVO_MAX_COMPARE,
           PWMSERVO_ANGLE_RANGE
         );
-        StateMachine = ROTATE;
+        flags.state_machine = ROTATE;
         break;
 
 
@@ -392,10 +376,10 @@ void StartMainTask(void *argument)
           AutoCompare_next(auto_compare)
         );
         OrdinaryTimer_Reset(main_cycle_timer);
-        OLED_REFRESH_REQUEST = 1;
+        flags.oled_refresh_req = true;
         osMessageQueuePut(sensor_dataHandle, &distance, 0, 0);
         osMessageQueuePut(sensor_dataHandle, &angle, 0, 0);
-        StateMachine = COOLING;
+        flags.state_machine = COOLING;
         break;
 
 
@@ -404,18 +388,22 @@ void StartMainTask(void *argument)
         if (OrdinaryTimer_is_Counting(main_cycle_timer)) break;
 
         // 刚进入COOLING，开始倒计时
-        if (OrdinaryTimer_is_Reset(main_cycle_timer)) {
-          OrdinaryTimer_SetCycle_ms(main_cycle_timer, cooling_time_ms);
+        if (OrdinaryTimer_is_Reset(main_cycle_timer))
+        {
+          OrdinaryTimer_SetCycle_ms(
+            main_cycle_timer,
+            flags.cooling_time_ms
+          );
         }
 
         // 倒计时完毕
-        if (OrdinaryTimer_is_CountCplt(main_cycle_timer)) {
+        if (OrdinaryTimer_is_CountCplt(main_cycle_timer))
+        {
           OrdinaryTimer_Reset(main_cycle_timer);
-          StateMachine = PAUSE_AND_EVENT_HANDLE;
+          flags.state_machine = PAUSE_AND_EVENT_HANDLE;
         }
         break;
       }
-
 
       osDelay(1);
   }
@@ -437,29 +425,33 @@ void StartOledTask(void *argument)
   for(;;)
   {
     // event: 按按钮（KEY2）启用或禁用OLED输出
-    if (KEY2_IS_PRESSED()) {
+    if (KEY2_IS_PRESSED())
+    {
       HAL_Delay(10);
       if (KEY2_IS_PRESSED()) {
         LED_toggle(led_blue);
-        ENABLE_OLED = 1 - ENABLE_OLED;
+        flags.enable_oled = !flags.enable_oled;
 
-        if (ENABLE_OLED) OLED_REFRESH_REQUEST = 1;
-        else OLED_CLEAR_REQUEST = 1;
+        if (flags.enable_oled) flags.oled_refresh_req = true;
+        else flags.oled_clear_req = true;
             
         while (KEY2_IS_PRESSED());
       }
     }
 
     // event: 清空或显示OLED
-    if (OLED_CLEAR_REQUEST) {
-      OLED_CLEAR_REQUEST = 0;
+    if (flags.oled_clear_req)
+    {
+      flags.oled_clear_req = false;
       OLED_NewFrame();
       OLED_ShowFrame();
     }
-    else if (OLED_REFRESH_REQUEST && ENABLE_OLED) {
-      OLED_REFRESH_REQUEST = 0;
+    else if (flags.oled_refresh_req && flags.enable_oled)
+    {
+      flags.oled_refresh_req = false;
       print_sensor_data_on_oled(distance, angle);
     }
+
     osDelay(1);
   }
   /* USER CODE END StartOledTask */
@@ -478,15 +470,17 @@ void StartBluetoothTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    if (Usart_is_RxCplt(bluetooth)) {
+    // event: 蓝牙接收完毕
+    if (Usart_is_RxCplt(bluetooth))
+    {
       Usart_mark_RxCplt(bluetooth, 0);
       bluetooth_cmd_handler(bluetooth);
       Usart_ReceiveToIdle_DMA_noHT(bluetooth);
     }
 
+    // event: 蓝牙发送完毕
     if (Usart_is_TxCplt(bluetooth)
-        && osMessageQueueGetCount(sensor_dataHandle) == 2
-       )
+        && osMessageQueueGetCount(sensor_dataHandle) == 2 )
     {
       Usart_mark_TxCplt(bluetooth, 0);
       float d = 0;
@@ -495,6 +489,7 @@ void StartBluetoothTask(void *argument)
       osMessageQueueGet(sensor_dataHandle, &a, 0, 0);
       send_sensor_data_bluetooth(d, a);
     }
+
     osDelay(1);
   }
   /* USER CODE END StartBluetoothTask */

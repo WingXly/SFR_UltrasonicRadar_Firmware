@@ -442,6 +442,7 @@ void CaptureTimer_SaveCounter_both(CaptureTimer * this)
 {
     CaptureTimer_SaveCounter_Auto_1(this);
     CaptureTimer_SaveCounter_Auto_2(this);
+    CaptureTimer_mark_CaptureCplt(this, 1);
 }
 
 

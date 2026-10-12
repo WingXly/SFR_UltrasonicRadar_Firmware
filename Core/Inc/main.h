@@ -47,16 +47,6 @@ extern "C" {
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
 
-typedef enum {
-  INIT,                   // 初始化
-  PAUSE_AND_EVENT_HANDLE, // 暂停与事件处理
-  TRIG_UP_AND_DOWN,       // <main> 上拉与下拉触发器
-  MEASURING,              // <TIM1> 超声波测距仪正在测距
-  PROCESSING,             // <main> 计算距离与处理OLED显示
-  ROTATE,                 // <main> 发布舵机旋转指令
-  COOLING                 // <TIM3> 冷却
-} StateMachine_TypeDef;
-
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
@@ -101,21 +91,6 @@ void print_sensor_data_on_oled(float distance, float angle);
 #define HC_SR04_Trig_GPIO_Port GPIOA
 
 /* USER CODE BEGIN Private defines */
-
-// 声速
-#define SPEED_OF_SOUND_m_s 340.0f
-
-// HC-SR04的触发用时
-#define TRIG_DURATION_ms 0.01f
-
-// PWM舵机最小占空比
-#define PWMSERVO_MIN_COMPARE 50
-
-// PWM舵机最大占空比
-#define PWMSERVO_MAX_COMPARE 250
-
-// PWM舵机的角度范围
-#define PWMSERVO_ANGLE_RANGE 180.0f
 
 #define KEY1_IS_PRESSED() (HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_RESET)
 #define KEY2_IS_PRESSED() (HAL_GPIO_ReadPin(KEY2_GPIO_Port, KEY2_Pin) == GPIO_PIN_RESET)
