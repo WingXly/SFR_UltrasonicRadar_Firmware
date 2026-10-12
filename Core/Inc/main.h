@@ -85,6 +85,7 @@ extern AutoCompare_TypeDef * auto_compare;
 #define KEY1_GPIO_Port GPIOB
 #define KEY2_Pin GPIO_PIN_13
 #define KEY2_GPIO_Port GPIOB
+#define KEY2_EXTI_IRQn EXTI15_10_IRQn
 #define HC_SR04_Trig_Pin GPIO_PIN_11
 #define HC_SR04_Trig_GPIO_Port GPIOA
 

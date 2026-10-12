@@ -152,6 +152,22 @@ AutoCompare_TypeDef * auto_compare = &ac_;
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+/*GPIO中断回调函数*/
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == KEY2_Pin) // 如果是因为KEY2按下而触发的
+    {
+      LED_toggle(led_blue);
+      flags.enable_oled = !flags.enable_oled;
+
+      if (flags.enable_oled) flags.oled_refresh_req = true;
+      else flags.oled_clear_req = true;
+      
+      extern osSemaphoreId_t OledUpdateWakerHandle;
+      osSemaphoreRelease(OledUpdateWakerHandle);
+    }
+}
+
 
 /*计时器自动重装载回调函数*/
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)

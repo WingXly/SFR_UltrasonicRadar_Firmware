@@ -93,6 +93,11 @@ osSemaphoreId_t BtTaskWakerHandle;
 const osSemaphoreAttr_t BtTaskWaker_attributes = {
   .name = "BtTaskWaker"
 };
+/* Definitions for OledUpdateWaker */
+osSemaphoreId_t OledUpdateWakerHandle;
+const osSemaphoreAttr_t OledUpdateWaker_attributes = {
+  .name = "OledUpdateWaker"
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -137,6 +142,9 @@ void MX_FREERTOS_Init(void) {
   /* Create the semaphores(s) */
   /* creation of BtTaskWaker */
   BtTaskWakerHandle = osSemaphoreNew(1, 0, &BtTaskWaker_attributes);
+
+  /* creation of OledUpdateWaker */
+  OledUpdateWakerHandle = osSemaphoreNew(1, 0, &OledUpdateWaker_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -374,30 +382,17 @@ void StartOledTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    // event: 按按钮（KEY2）启用或禁用OLED输出
-    if (KEY2_IS_PRESSED())
-    {
-      osDelay(10);
-      if (KEY2_IS_PRESSED()) {
-        LED_toggle(led_blue);
-        flags.enable_oled = !flags.enable_oled;
+    // 等待信号量释放
+    osSemaphoreAcquire(OledUpdateWakerHandle, osWaitForever);
 
-        if (flags.enable_oled) flags.oled_refresh_req = true;
-        else flags.oled_clear_req = true;
-            
-        while (KEY2_IS_PRESSED());
-      }
-    }
-
-    // event: 清空或显示OLED
-    if (flags.oled_clear_req)
-    {
+    // 有关按按钮（KEY2）的处理放在main.c的HAL_GPIO_EXTI_Callback()里
+    
+    // 清空或显示OLED
+    if (flags.oled_clear_req) {
       flags.oled_clear_req = false;
       OLED_NewFrame();
       OLED_ShowFrame();
-    }
-    else if (flags.oled_refresh_req && flags.enable_oled)
-    {
+    } else if (flags.oled_refresh_req && flags.enable_oled) {
       flags.oled_refresh_req = false;
       print_sensor_data_on_oled(distance, angle);
     }
