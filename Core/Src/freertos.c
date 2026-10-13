@@ -196,7 +196,7 @@ void StartMainTask(void *argument)
   for(;;)
   {
     // 遍历状态机
-    switch (flags.state_machine)
+    switch (state_machine)
     {
       case INIT:
         // 阻止HC-SR04在INIT状态下工作
@@ -205,7 +205,7 @@ void StartMainTask(void *argument)
         // 启动时暂停
         LED_off(led_green);
         LED_on(led_red);
-        flags.pause = true;
+        pause = true;
 
         // 启动时不启用OLED输出
         LED_off(led_blue);
@@ -224,7 +224,7 @@ void StartMainTask(void *argument)
         Usart_ReceiveToIdle_DMA_noHT(bluetooth);
 
         osDelay(100);
-        flags.state_machine = PAUSE_AND_EVENT_HANDLE;
+        state_machine = PAUSE_AND_EVENT_HANDLE;
         break;
 
 
@@ -236,49 +236,49 @@ void StartMainTask(void *argument)
           if (KEY1_IS_PRESSED()) {
             LED_toggle(led_green);
             LED_toggle(led_red);
-            flags.pause = !flags.pause;
+            pause = !pause;
             
             while (KEY1_IS_PRESSED());
           }
         }
 
         // event: 更改compare step
-        if (1 <= params.modify_step_optType && params.modify_step_optType <= 3)
+        if (1 <= modify_step_optType && modify_step_optType <= 3)
         {
           AutoCompare_setStep(
             auto_compare,
-            params.modify_step_optType,
-            params.modify_step_value
+            modify_step_optType,
+            modify_step_value
           );
-          params.modify_step_optType = 0;
+          modify_step_optType = 0;
         }
 
         //event: 更改cooling_time
-        if (1 <= params.modify_cooling_time_optType && params.modify_cooling_time_optType <=3)
+        if (1 <= modify_cooling_time_optType && modify_cooling_time_optType <=3)
         {
-          float cooling_time_old = flags.cooling_time_ms;
+          float cooling_time_old = cooling_time_ms;
           
-          if (params.modify_cooling_time_optType == 1) {        // set
-              flags.cooling_time_ms = (float)params.modify_cooling_time_value / 1000;
-          } else if (params.modify_cooling_time_optType == 2) { // add
-              flags.cooling_time_ms += (float)params.modify_cooling_time_value / 1000;
-          } else if (params.modify_cooling_time_optType == 3) { // remove
-              flags.cooling_time_ms -= (float)params.modify_cooling_time_value / 1000;
+          if (modify_cooling_time_optType == 1) {        // set
+              cooling_time_ms = (float)modify_cooling_time_value / 1000;
+          } else if (modify_cooling_time_optType == 2) { // add
+              cooling_time_ms += (float)modify_cooling_time_value / 1000;
+          } else if (modify_cooling_time_optType == 3) { // remove
+              cooling_time_ms -= (float)modify_cooling_time_value / 1000;
           }
 
           // 不允许冷却时间小于1us
-          if (flags.cooling_time_ms < 0.001) {
-            flags.cooling_time_ms = cooling_time_old;
+          if (cooling_time_ms < 0.001) {
+            cooling_time_ms = cooling_time_old;
             awake_bt_send_error(0x00);
           }
 
-          params.modify_cooling_time_optType = 0;
+          modify_cooling_time_optType = 0;
         }
 
         // 如果不处于暂停，则进行下一步
-        if (flags.pause == false)
+        if (pause == false)
         {
-          flags.state_machine = TRIG_UP_AND_DOWN;
+          state_machine = TRIG_UP_AND_DOWN;
         }
         break;
 
@@ -301,7 +301,7 @@ void StartMainTask(void *argument)
           TimerEp_SetCounter((Timer *)capture_timer, 0); // 将TIM1清零，防止测量时自动重装载
           CaptureTimer_TriggerDown(capture_timer); // 下拉既代表开始捕获
           OrdinaryTimer_Reset(main_cycle_timer); // 重置计时器
-          flags.state_machine = MEASURING;
+          state_machine = MEASURING;
         }
         break;
 
@@ -309,7 +309,7 @@ void StartMainTask(void *argument)
       case MEASURING:
         // 如果捕获完毕
         if (CaptureTimer_is_CaptureCplt(capture_timer)) {
-          flags.state_machine = PROCESSING;
+          state_machine = PROCESSING;
         }
         break;
 
@@ -325,7 +325,7 @@ void StartMainTask(void *argument)
           PWMSERVO_MAX_COMPARE,
           PWMSERVO_ANGLE_RANGE
         );
-        flags.state_machine = ROTATE;
+        state_machine = ROTATE;
         break;
 
 
@@ -335,9 +335,9 @@ void StartMainTask(void *argument)
           AutoCompare_next(auto_compare)
         );
         OrdinaryTimer_Reset(main_cycle_timer);
-        flags.oled_refresh_req = true;
+        oled_refresh_req = true;
         awake_bt_send_data(distance, angle);
-        flags.state_machine = COOLING;
+        state_machine = COOLING;
         break;
 
 
@@ -350,7 +350,7 @@ void StartMainTask(void *argument)
         {
           OrdinaryTimer_SetCycle_ms(
             main_cycle_timer,
-            flags.cooling_time_ms
+            cooling_time_ms
           );
         }
 
@@ -358,7 +358,7 @@ void StartMainTask(void *argument)
         if (OrdinaryTimer_is_CountCplt(main_cycle_timer))
         {
           OrdinaryTimer_Reset(main_cycle_timer);
-          flags.state_machine = PAUSE_AND_EVENT_HANDLE;
+          state_machine = PAUSE_AND_EVENT_HANDLE;
         }
         break;
       }
@@ -388,12 +388,12 @@ void StartOledTask(void *argument)
     // 有关按按钮（KEY2）的处理放在main.c的HAL_GPIO_EXTI_Callback()里
     
     // 清空或显示OLED
-    if (flags.oled_clear_req) {
-      flags.oled_clear_req = false;
+    if (oled_clear_req) {
+      oled_clear_req = false;
       OLED_NewFrame();
       OLED_ShowFrame();
-    } else if (flags.oled_refresh_req && flags.enable_oled) {
-      flags.oled_refresh_req = false;
+    } else if (oled_refresh_req && enable_oled) {
+      oled_refresh_req = false;
       print_sensor_data_on_oled(distance, angle);
     }
 

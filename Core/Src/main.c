@@ -158,10 +158,10 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     if (GPIO_Pin == KEY2_Pin) // 如果是因为KEY2按下而触发的
     {
       LED_toggle(led_blue);
-      flags.enable_oled = !flags.enable_oled;
+      enable_oled = !enable_oled;
 
-      if (flags.enable_oled) flags.oled_refresh_req = true;
-      else flags.oled_clear_req = true;
+      if (enable_oled) oled_refresh_req = true;
+      else oled_clear_req = true;
       
       extern osSemaphoreId_t OledUpdateWakerHandle;
       osSemaphoreRelease(OledUpdateWakerHandle);
@@ -185,7 +185,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
   // TIM1捕获上升和下降沿
   if ( htim->Instance == TimerEp_GetInstance((Timer*)capture_timer)
        && htim->Channel == CaptureTimer_GetActiveChannel(capture_timer)
-       && flags.state_machine == MEASURING )
+       && state_machine == MEASURING )
   {
     CaptureTimer_SaveCounter_both(capture_timer);
   }

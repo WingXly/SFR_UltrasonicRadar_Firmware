@@ -37,29 +37,22 @@ typedef enum {
 } StateMachine_TypeDef;
 
 
-// 系统参数与标志位
-typedef struct {
-    volatile StateMachine_TypeDef state_machine;
-    volatile bool pause;
-    volatile bool enable_oled;
-    volatile bool oled_refresh_req;
-    volatile bool oled_clear_req;
-    volatile float cooling_time_ms;
-} Flags_TypeDef;
+
+StateMachine_TypeDef state_machine = INIT;
 
 
-// 事件参数
-typedef struct {
-    volatile int modify_step_optType;
-    volatile int modify_step_value;
-    volatile int modify_cooling_time_optType;
-    volatile int modify_cooling_time_value;
-} Params_TypeDef;
+bool pause = false;
+bool enable_oled = false;
+bool oled_refresh_req = false;
+bool oled_clear_req = false;
+float cooling_time_ms = 30.0f;
 
 
-// 全局上下文实例
-extern Flags_TypeDef flags;
-extern Params_TypeDef params;
+int modify_step_optType = 0;
+int modify_step_value = 0;
+int modify_cooling_time_optType = 0;
+int modify_cooling_time_value = 0;
+
 
 Usart * bluetooth = NULL;
 LED * led_red   = NULL;

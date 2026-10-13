@@ -62,13 +62,13 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
     {
         if (para == 0)      // 解除暂停
         {
-            flags.pause = false;
+            pause = false;
             LED_on(led_green);
             LED_off(led_red);
         }
         else if (para == 1) // 暂停
         {
-            flags.pause = true;
+            pause = true;
             LED_off(led_green);
             LED_on(led_red);
         }
@@ -81,15 +81,15 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
     {
         if (para == 0)      // 关闭OLED
         {
-            flags.enable_oled = false;
-            flags.oled_clear_req = true;
+            enable_oled = false;
+            oled_clear_req = true;
             LED_off(led_blue);
             
         }
         else if (para == 1) // 开启OLED
         {
-            flags.enable_oled = true;
-            flags.oled_refresh_req = true;
+            enable_oled = true;
+            oled_refresh_req = true;
             LED_on(led_blue);
         }
         else
@@ -111,14 +111,14 @@ void command_handler_2para(uint16_t cmd_type, uint16_t para1, uint16_t para2)
     if (cmd_type == 2)      // 设置 compare_step。将para一比一转换
     {
         // 只发送修改请求，具体逻辑在freertos.c/StartMainTask()中实现
-        params.modify_step_optType = para1;
-        params.modify_step_value = para2;
+        modify_step_optType = para1;
+        modify_step_value = para2;
     }
     else if (cmd_type == 3) // 设置 cooling_time_ms。将para除以1000后转换
     {
         // 只发送修改请求，具体逻辑在freertos.c/StartMainTask()中实现
-        params.modify_cooling_time_optType = para1;
-        params.modify_cooling_time_value = para2;
+        modify_cooling_time_optType = para1;
+        modify_cooling_time_value = para2;
     }
     else
     {
