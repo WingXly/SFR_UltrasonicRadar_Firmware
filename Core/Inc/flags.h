@@ -37,29 +37,27 @@ typedef enum {
 } StateMachine_TypeDef;
 
 
+/*全局标识符，采用extern防止暂定定义*/
 
-StateMachine_TypeDef state_machine = INIT;
+extern StateMachine_TypeDef state_machine;
 
+extern bool pause;
+extern bool enable_oled;
+extern bool oled_refresh_req;
+extern bool oled_clear_req;
+extern float cooling_time_ms;
 
-bool pause = false;
-bool enable_oled = false;
-bool oled_refresh_req = false;
-bool oled_clear_req = false;
-float cooling_time_ms = 30.0f;
+extern int modify_step_optType;
+extern int modify_step_value;
+extern int modify_cooling_time_optType;
+extern int modify_cooling_time_value;
 
-
-int modify_step_optType = 0;
-int modify_step_value = 0;
-int modify_cooling_time_optType = 0;
-int modify_cooling_time_value = 0;
-
-
-Usart * bluetooth = NULL;
-LED * led_red   = NULL;
-LED * led_green = NULL;
-LED * led_blue  = NULL;
-CaptureTimer  * capture_timer    = NULL;
-OrdinaryTimer * main_cycle_timer = NULL;
-PwmTimer      * servo_pwm_timer  = NULL;
+extern Usart * bluetooth;
+extern LED * led_red;
+extern LED * led_green;
+extern LED * led_blue;
+extern CaptureTimer  * capture_timer;
+extern OrdinaryTimer * main_cycle_timer;
+extern PwmTimer      * servo_pwm_timer;
 
 #endif // __FLAGS__H_

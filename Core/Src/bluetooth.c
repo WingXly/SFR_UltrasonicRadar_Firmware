@@ -110,13 +110,13 @@ void command_handler_2para(uint16_t cmd_type, uint16_t para1, uint16_t para2)
 {
     if (cmd_type == 2)      // 设置 compare_step。将para一比一转换
     {
-        // 只发送修改请求，具体逻辑在freertos.c/StartMainTask()中实现
+        // 只发送修改请求，具体逻辑在freertos.c/StartTask_Main()中实现
         modify_step_optType = para1;
         modify_step_value = para2;
     }
     else if (cmd_type == 3) // 设置 cooling_time_ms。将para除以1000后转换
     {
-        // 只发送修改请求，具体逻辑在freertos.c/StartMainTask()中实现
+        // 只发送修改请求，具体逻辑在freertos.c/StartTask_Main()中实现
         modify_cooling_time_optType = para1;
         modify_cooling_time_value = para2;
     }
@@ -167,7 +167,7 @@ void send_error(Usart * who_send_data, uint16_t error_code)
 
     sendMsg[0] = FRAME_HEADER_1,
     sendMsg[1] = FRAME_HEADER_2,
-    sendMsg[2] = 0xFF,
+    sendMsg[2] = 5,
     sendMsg[3] = 0xFF;
     sendMsg[4] = 0xFF,
     sendMsg[5] = error_code >> 8;

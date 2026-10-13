@@ -19,6 +19,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
+#include "cmsis_os2.h"
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
@@ -32,7 +33,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <sys/_intsup.h>
 #include "bluetooth.h"
 #include "usart_ep.h"
 
@@ -62,84 +62,95 @@ float distance = 0;          // 距离（计算值）
 float angle = 0;             // 角度（计算值）
 
 /* USER CODE END Variables */
-/* Definitions for MainTask */
-osThreadId_t MainTaskHandle;
-const osThreadAttr_t MainTask_attributes = {
-  .name = "MainTask",
+/* Definitions for Task_Main */
+osThreadId_t Task_MainHandle;
+const osThreadAttr_t Task_Main_attributes = {
+  .name = "Task_Main",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal1,
 };
-/* Definitions for OledTask */
-osThreadId_t OledTaskHandle;
-const osThreadAttr_t OledTask_attributes = {
-  .name = "OledTask",
+/* Definitions for Task_OledUpdate */
+osThreadId_t Task_OledUpdateHandle;
+const osThreadAttr_t Task_OledUpdate_attributes = {
+  .name = "Task_OledUpdate",
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityLow1,
 };
-/* Definitions for BluetoothTask */
-osThreadId_t BluetoothTaskHandle;
-const osThreadAttr_t BluetoothTask_attributes = {
-  .name = "BluetoothTask",
+/* Definitions for Task_BluetoothIO */
+osThreadId_t Task_BluetoothIOHandle;
+const osThreadAttr_t Task_BluetoothIO_attributes = {
+  .name = "Task_BluetoothIO",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityHigh,
 };
-/* Definitions for bt_send_data */
-osMessageQueueId_t bt_send_dataHandle;
-const osMessageQueueAttr_t bt_send_data_attributes = {
-  .name = "bt_send_data"
+/* Definitions for queue_btSendData_ */
+osMessageQueueId_t queue_btSendData_Handle;
+const osMessageQueueAttr_t queue_btSendData__attributes = {
+  .name = "queue_btSendData_"
 };
-/* Definitions for BtTaskWaker */
-osSemaphoreId_t BtTaskWakerHandle;
-const osSemaphoreAttr_t BtTaskWaker_attributes = {
-  .name = "BtTaskWaker"
+/* Definitions for binSignal_awake_BtTask_ */
+osSemaphoreId_t binSignal_awake_BtTask_Handle;
+const osSemaphoreAttr_t binSignal_awake_BtTask__attributes = {
+  .name = "binSignal_awake_BtTask_"
 };
-/* Definitions for OledUpdateWaker */
-osSemaphoreId_t OledUpdateWakerHandle;
-const osSemaphoreAttr_t OledUpdateWaker_attributes = {
-  .name = "OledUpdateWaker"
+/* Definitions for binSignal_awake_OledUpdate_ */
+osSemaphoreId_t binSignal_awake_OledUpdate_Handle;
+const osSemaphoreAttr_t binSignal_awake_OledUpdate__attributes = {
+  .name = "binSignal_awake_OledUpdate_"
 };
-/* Definitions for MainCycleWaker_ */
-osSemaphoreId_t MainCycleWaker_Handle;
-const osSemaphoreAttr_t MainCycleWaker__attributes = {
-  .name = "MainCycleWaker_"
+/* Definitions for binSignal_awake_MainCycle_ */
+osSemaphoreId_t binSignal_awake_MainCycle_Handle;
+const osSemaphoreAttr_t binSignal_awake_MainCycle__attributes = {
+  .name = "binSignal_awake_MainCycle_"
 };
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
 
 
-void awake_bt_send_data(float data1, float data2)
+
+
+void awake_bt_task()
 {
-  osMessageQueuePut(bt_send_dataHandle, &data1, 0, 0);
-  osMessageQueuePut(bt_send_dataHandle, &data2, 0, 0);
-  osSemaphoreRelease(bt_send_dataHandle);
+  osSemaphoreRelease(binSignal_awake_BtTask_Handle);
+}
+
+
+void awake_queue_btSendData_(float data1, float data2)
+{
+  osMessageQueuePut(queue_btSendData_Handle, &data1, 0, 0);
+  osMessageQueuePut(queue_btSendData_Handle, &data2, 0, 0);
+  awake_bt_task();
 }
 
 
 void awake_bt_send_error(uint16_t error_code)
 {
-    awake_bt_send_data(-1.0f, error_code);
+    awake_queue_btSendData_(-1.0f, error_code);
 }
 
 
 void awake_oled_update(bool oled_is_enable)
 {
   oled_refresh_req = oled_is_enable;
-  osSemaphoreRelease(OledUpdateWakerHandle);
+  osSemaphoreRelease(binSignal_awake_OledUpdate_Handle);
 }
 
 
 void awake_main_task()
 {
-  osSemaphoreRelease(MainCycleWaker_Handle);
+  osSemaphoreRelease(binSignal_awake_MainCycle_Handle);
 }
+
+
+
 
 
 /* USER CODE END FunctionPrototypes */
 
-void StartMainTask(void *argument);
-void StartOledTask(void *argument);
-void StartBluetoothTask(void *argument);
+void StartTask_Main(void *argument);
+void StartTask_OledUpdate(void *argument);
+void StartTask_BluetoothIO(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -158,14 +169,14 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_MUTEX */
 
   /* Create the semaphores(s) */
-  /* creation of BtTaskWaker */
-  BtTaskWakerHandle = osSemaphoreNew(1, 0, &BtTaskWaker_attributes);
+  /* creation of binSignal_awake_BtTask_ */
+  binSignal_awake_BtTask_Handle = osSemaphoreNew(1, 0, &binSignal_awake_BtTask__attributes);
 
-  /* creation of OledUpdateWaker */
-  OledUpdateWakerHandle = osSemaphoreNew(1, 0, &OledUpdateWaker_attributes);
+  /* creation of binSignal_awake_OledUpdate_ */
+  binSignal_awake_OledUpdate_Handle = osSemaphoreNew(1, 0, &binSignal_awake_OledUpdate__attributes);
 
-  /* creation of MainCycleWaker_ */
-  MainCycleWaker_Handle = osSemaphoreNew(1, 0, &MainCycleWaker__attributes);
+  /* creation of binSignal_awake_MainCycle_ */
+  binSignal_awake_MainCycle_Handle = osSemaphoreNew(1, 0, &binSignal_awake_MainCycle__attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -176,22 +187,22 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_TIMERS */
 
   /* Create the queue(s) */
-  /* creation of bt_send_data */
-  bt_send_dataHandle = osMessageQueueNew (8, sizeof(float), &bt_send_data_attributes);
+  /* creation of queue_btSendData_ */
+  queue_btSendData_Handle = osMessageQueueNew (8, sizeof(float), &queue_btSendData__attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of MainTask */
-  MainTaskHandle = osThreadNew(StartMainTask, NULL, &MainTask_attributes);
+  /* creation of Task_Main */
+  Task_MainHandle = osThreadNew(StartTask_Main, NULL, &Task_Main_attributes);
 
-  /* creation of OledTask */
-  OledTaskHandle = osThreadNew(StartOledTask, NULL, &OledTask_attributes);
+  /* creation of Task_OledUpdate */
+  Task_OledUpdateHandle = osThreadNew(StartTask_OledUpdate, NULL, &Task_OledUpdate_attributes);
 
-  /* creation of BluetoothTask */
-  BluetoothTaskHandle = osThreadNew(StartBluetoothTask, NULL, &BluetoothTask_attributes);
+  /* creation of Task_BluetoothIO */
+  Task_BluetoothIOHandle = osThreadNew(StartTask_BluetoothIO, NULL, &Task_BluetoothIO_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -203,16 +214,12 @@ void MX_FREERTOS_Init(void) {
 
 }
 
-/* USER CODE BEGIN Header_StartMainTask */
-/**
-  * @brief  Function implementing the MainTask thread.
-  * @param  argument: Not used
-  * @retval None
-  */
-/* USER CODE END Header_StartMainTask */
-void StartMainTask(void *argument)
+
+
+
+void StartTask_Main(void *argument)
 {
-  /* USER CODE BEGIN StartMainTask */
+  /* USER CODE BEGIN StartTask_Main */
   /* Infinite loop */
   for(;;)
   {
@@ -242,7 +249,7 @@ void StartMainTask(void *argument)
         Usart_mark_RxCplt(bluetooth, 1);
         Usart_mark_TxCplt(bluetooth, 1);
 
-        // 等待命令
+        // 等待接收命令
         Usart_ReceiveToIdle_DMA_noHT(bluetooth);
 
         osDelay(100);
@@ -300,7 +307,7 @@ void StartMainTask(void *argument)
         OrdinaryTimer_SetCycle_ms(main_cycle_timer, TRIG_DURATION_ms);
 
         // 等待倒计时结束
-        osSemaphoreAcquire(MainCycleWaker_Handle, osWaitForever);
+        osSemaphoreAcquire(binSignal_awake_MainCycle_Handle, osWaitForever);
 
         // 倒计时完毕，将Trig下拉，开始捕获
         TimerEp_SetCounter((Timer *)capture_timer, 0);
@@ -312,7 +319,7 @@ void StartMainTask(void *argument)
 
       case MEASURING:
         // 等待捕获结束
-        osSemaphoreAcquire(MainCycleWaker_Handle, osWaitForever);
+        osSemaphoreAcquire(binSignal_awake_MainCycle_Handle, osWaitForever);
 
         // 如果捕获完毕
         state_machine = PROCESSING;
@@ -352,10 +359,10 @@ void StartMainTask(void *argument)
           cooling_time_ms
         );
         if(enable_oled) awake_oled_update(true);
-        awake_bt_send_data(distance, angle);
+        awake_queue_btSendData_(distance, angle);
 
         // 等待倒计时结束
-        osSemaphoreAcquire(MainCycleWaker_Handle, osWaitForever);
+        osSemaphoreAcquire(binSignal_awake_MainCycle_Handle, osWaitForever);
 
         // 倒计时完毕
         state_machine = PAUSE_AND_EVENT_HANDLE;
@@ -366,24 +373,20 @@ void StartMainTask(void *argument)
       osDelay(1);
   }
 
-  /* USER CODE END StartMainTask */
+  /* USER CODE END StartTask_Main */
 }
 
-/* USER CODE BEGIN Header_StartOledTask */
-/**
-* @brief Function implementing the OledTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartOledTask */
-void StartOledTask(void *argument)
+
+
+
+void StartTask_OledUpdate(void *argument)
 {
-  /* USER CODE BEGIN StartOledTask */
+  /* USER CODE BEGIN StartTask_OledUpdate */
   /* Infinite loop */
   for(;;)
   {
     // 等待信号量释放
-    osSemaphoreAcquire(OledUpdateWakerHandle, osWaitForever);
+    osSemaphoreAcquire(binSignal_awake_OledUpdate_Handle, osWaitForever);
 
     // 有关按按钮（KEY2）的处理放在main.c的HAL_GPIO_EXTI_Callback()里
     
@@ -400,24 +403,20 @@ void StartOledTask(void *argument)
 
     osDelay(1);
   }
-  /* USER CODE END StartOledTask */
+  /* USER CODE END StartTask_OledUpdate */
 }
 
-/* USER CODE BEGIN Header_StartBluetoothTask */
-/**
-* @brief Function implementing the BluetoothTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartBluetoothTask */
-void StartBluetoothTask(void *argument)
+
+
+
+void StartTask_BluetoothIO(void *argument)
 {
-  /* USER CODE BEGIN StartBluetoothTask */
+  /* USER CODE BEGIN StartTask_BluetoothIO */
   /* Infinite loop */
   for(;;)
   {
     // 等待信号量释放
-    osSemaphoreAcquire(BtTaskWakerHandle, osWaitForever);
+    osSemaphoreAcquire(binSignal_awake_BtTask_Handle, osWaitForever);
     
     // event: 蓝牙接收完毕
     if (Usart_is_RxCplt(bluetooth))
@@ -431,30 +430,36 @@ void StartBluetoothTask(void *argument)
     }
 
     // event: 如果队列中有需要发送的东西，就发送它们
-    if (osMessageQueueGetCount(bt_send_dataHandle) >= 2 )
+    if (osMessageQueueGetCount(queue_btSendData_Handle) >= 2 )
     {
       // 获取将要发送的数据
-      float sendData_1 = 0;
-      float sendData_2 = 0;
-      osMessageQueueGet(bt_send_dataHandle, &sendData_1, 0, 0);
-      osMessageQueueGet(bt_send_dataHandle, &sendData_2, 0, 0);
+      static float sendData_1 = 0;
+      static float sendData_2 = 0;
+      osMessageQueueGet(queue_btSendData_Handle, &sendData_1, 0, 0);
+      osMessageQueueGet(queue_btSendData_Handle, &sendData_2, 0, 0);
 
       // 判断发送的数据是传感器数据还是错误信息，然后发送
       if (sendData_1 == -1.0f) {
-        if (sendData_2 < 0) sendData_2 = 1000;
+        if (sendData_2 < 0) sendData_2 = 65535;
         send_error(bluetooth, (uint16_t)sendData_2);
       } else {
         send_sensor_data(bluetooth, sendData_1, sendData_2);
       }
 
       // 如果队列里还有数据，就再让蓝牙发送一次（不阻塞其他任务）
-      if (osMessageQueueGetCount(bt_send_dataHandle) >= 2 )
-        osSemaphoreRelease(BtTaskWakerHandle);
+      if (osMessageQueueGetCount(queue_btSendData_Handle) >= 2 ) {
+        osSemaphoreRelease(binSignal_awake_BtTask_Handle);
+      }
+
+      // 清理垃圾数据
+      else if (osMessageQueueGetCount(queue_btSendData_Handle) == 1) {
+        osMessageQueueGet(queue_btSendData_Handle, &sendData_1, 0, 0);
+      }
     }
 
     osDelay(1);
   }
-  /* USER CODE END StartBluetoothTask */
+  /* USER CODE END StartTask_BluetoothIO */
 }
 
 /* Private application code --------------------------------------------------*/

@@ -69,8 +69,8 @@ void PwmTimer_SetCompare_Auto_Linear_ForthAndBack(  PwmTimer * this,
 void CaptureTimer_Init(CaptureTimer * this);
 void CaptureTimer_TriggerUp(CaptureTimer * this);
 void CaptureTimer_TriggerDown(CaptureTimer * this);
-volatile int CaptureTimer_ReadCounter_1(CaptureTimer * this);
-volatile int CaptureTimer_ReadCounter_2(CaptureTimer * this);
+int CaptureTimer_ReadCounter_1(CaptureTimer * this);
+int CaptureTimer_ReadCounter_2(CaptureTimer * this);
 HAL_TIM_ActiveChannel CaptureTimer_GetActiveChannel(CaptureTimer * this);
 void CaptureTimer_SaveCounter_Auto_1(CaptureTimer * this);
 void CaptureTimer_SaveCounter_Auto_2(CaptureTimer * this);

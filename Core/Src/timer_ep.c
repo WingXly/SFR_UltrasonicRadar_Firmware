@@ -405,14 +405,14 @@ void CaptureTimer_TriggerDown(CaptureTimer * this)
 
 
 /*读取捕获定时器的第一通道的count值*/
-volatile int CaptureTimer_ReadCounter_1(CaptureTimer * this)
+int CaptureTimer_ReadCounter_1(CaptureTimer * this)
 {
     return ( HAL_TIM_ReadCapturedValue(this->timer_base.htim, this->capture_channel_1) );
 }
 
 
 /*读取捕获定时器的第二通道的count值*/
-volatile int CaptureTimer_ReadCounter_2(CaptureTimer * this)
+int CaptureTimer_ReadCounter_2(CaptureTimer * this)
 {
     return ( HAL_TIM_ReadCapturedValue(this->timer_base.htim, this->capture_channel_2) );
 }

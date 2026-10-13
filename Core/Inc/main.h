@@ -73,7 +73,8 @@ extern AutoCompare_TypeDef * auto_compare;
 
 /*from freertos.c*/
 
-void awake_bt_send_data(float data1, float data2);
+void awake_bt_task();
+void awake_queue_btSendData_(float data1, float data2);
 void awake_bt_send_error(uint16_t error_code);
 void awake_oled_update(bool oled_is_enable);
 void awake_main_task();

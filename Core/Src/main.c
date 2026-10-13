@@ -32,7 +32,6 @@
 #include "font.h"
 #include "timer_ep.h"
 #include <stdio.h>
-#include <sys/_intsup.h>
 #include "bluetooth.h"
 #include "usart_ep.h"
 
@@ -152,8 +151,6 @@ AutoCompare_TypeDef * auto_compare = &ac_;
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-extern osSemaphoreId_t MainCycleWaker_Handle;
-
 
 /*GPIO中断回调函数*/
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
@@ -178,12 +175,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 /*计时器自动重装载回调函数*/
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-  // TIM3的us级计时
-  if (htim->Instance == TimerEp_GetInstance((Timer*)main_cycle_timer)) {
+  // TIM3的us级计时，为缓解中断压力，此处直接采用句柄而不走面向对象
+  if (htim == &htim3) {
     // 倒计时
     OrdinaryTimer_CountDown(main_cycle_timer);
 
-    // 倒计时结束则唤醒MainTask
+    // 倒计时结束则唤醒Task_Main
     if (OrdinaryTimer_is_CountCplt(main_cycle_timer)) {
       awake_main_task();
     }
@@ -201,7 +198,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
     // 记录捕获信息
     CaptureTimer_SaveCounter_both(capture_timer);
     
-    // 唤醒MainTask
+    // 唤醒Task_Main
     awake_main_task();
   }
 }
@@ -210,19 +207,21 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 /*串口Tx回调函数*/
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
-    if (huart == Usart_pHuart(bluetooth)) {
-        Usart_mark_TxCplt(bluetooth, 1);
-    }
+  // 只对传输完成进行标注，不唤醒蓝牙任务
+  if (huart == Usart_pHuart(bluetooth)) {
+      Usart_mark_TxCplt(bluetooth, 1);
+  }
 }
 
 
 /*串口Rx回调函数*/
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
-    if (huart == Usart_pHuart(bluetooth)) {
-        Usart_mark_RxCplt(bluetooth, 1);
-        Usart_mark_RxSize(bluetooth, Size);
-    }
+  if (huart == Usart_pHuart(bluetooth)) {
+    Usart_mark_RxCplt(bluetooth, 1);
+    Usart_mark_RxSize(bluetooth, Size);
+    awake_bt_task();
+  }
 }
 
 
