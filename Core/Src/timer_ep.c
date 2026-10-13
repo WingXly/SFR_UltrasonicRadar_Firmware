@@ -209,7 +209,9 @@ void OrdinaryTimer_CountDown(OrdinaryTimer * this)
 {
     if (this->cycle > 0) {
         this->cycle--;
-        if (this->cycle == 0) this->AC_flag = 1;
+        if (this->cycle == 0) {
+            this->AC_flag = 1;
+        }
     }
 }
 

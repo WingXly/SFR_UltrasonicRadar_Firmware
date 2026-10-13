@@ -98,6 +98,11 @@ osSemaphoreId_t OledUpdateWakerHandle;
 const osSemaphoreAttr_t OledUpdateWaker_attributes = {
   .name = "OledUpdateWaker"
 };
+/* Definitions for MainCycleWaker_ */
+osSemaphoreId_t MainCycleWaker_Handle;
+const osSemaphoreAttr_t MainCycleWaker__attributes = {
+  .name = "MainCycleWaker_"
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -114,6 +119,19 @@ void awake_bt_send_data(float data1, float data2)
 void awake_bt_send_error(uint16_t error_code)
 {
     awake_bt_send_data(-1.0f, error_code);
+}
+
+
+void awake_oled_update(bool oled_is_enable)
+{
+  oled_refresh_req = oled_is_enable;
+  osSemaphoreRelease(OledUpdateWakerHandle);
+}
+
+
+void awake_main_task()
+{
+  osSemaphoreRelease(MainCycleWaker_Handle);
 }
 
 
@@ -145,6 +163,9 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of OledUpdateWaker */
   OledUpdateWakerHandle = osSemaphoreNew(1, 0, &OledUpdateWaker_attributes);
+
+  /* creation of MainCycleWaker_ */
+  MainCycleWaker_Handle = osSemaphoreNew(1, 0, &MainCycleWaker__attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -208,13 +229,14 @@ void StartMainTask(void *argument)
         pause = true;
 
         // 启动时不启用OLED输出
+        oled_refresh_req = 0;
         LED_off(led_blue);
 
-        // 允许状态机步进
+        // 重置计时器
         OrdinaryTimer_Reset(main_cycle_timer);
 
         // 启动时将舵机置于0度
-        PwmTimer_SetDuty(servo_pwm_timer, 0.025);
+        PwmTimer_SetCompare(servo_pwm_timer, PWMSERVO_MIN_COMPARE);
 
         // 启用蓝牙发送和接收
         Usart_mark_RxCplt(bluetooth, 1);
@@ -225,22 +247,11 @@ void StartMainTask(void *argument)
 
         osDelay(100);
         state_machine = PAUSE_AND_EVENT_HANDLE;
-        break;
+      break;
 
 
       case PAUSE_AND_EVENT_HANDLE:
-        // event: 按按钮（KEY1）暂停或解除暂停
-        if (KEY1_IS_PRESSED())
-        {
-          osDelay(10);
-          if (KEY1_IS_PRESSED()) {
-            LED_toggle(led_green);
-            LED_toggle(led_red);
-            pause = !pause;
-            
-            while (KEY1_IS_PRESSED());
-          }
-        }
+        // 按按钮（KEY1）暂停或解除暂停的事件放在main.c的HAL_GPIO_EXTI_Callback()里
 
         // event: 更改compare step
         if (1 <= modify_step_optType && modify_step_optType <= 3)
@@ -276,45 +287,40 @@ void StartMainTask(void *argument)
         }
 
         // 如果不处于暂停，则进行下一步
-        if (pause == false)
+        if (!pause)
         {
           state_machine = TRIG_UP_AND_DOWN;
         }
-        break;
+      break;
 
 
       case TRIG_UP_AND_DOWN:
-        // 正在倒计时
-        if (OrdinaryTimer_is_Counting(main_cycle_timer)) break;
-        
         // 刚进入此状态，上拉Trig+开始倒计时
-        if (OrdinaryTimer_is_Reset(main_cycle_timer))
-        {
-          CaptureTimer_mark_CaptureCplt(capture_timer, 0);
-          CaptureTimer_TriggerUp(capture_timer);
-          OrdinaryTimer_SetCycle_ms(main_cycle_timer, TRIG_DURATION_ms);
-        }
+        CaptureTimer_TriggerUp(capture_timer);
+        OrdinaryTimer_SetCycle_ms(main_cycle_timer, TRIG_DURATION_ms);
+
+        // 等待倒计时结束
+        osSemaphoreAcquire(MainCycleWaker_Handle, osWaitForever);
 
         // 倒计时完毕，将Trig下拉，开始捕获
-        if (OrdinaryTimer_is_CountCplt(main_cycle_timer))
-        {
-          TimerEp_SetCounter((Timer *)capture_timer, 0); // 将TIM1清零，防止测量时自动重装载
-          CaptureTimer_TriggerDown(capture_timer); // 下拉既代表开始捕获
-          OrdinaryTimer_Reset(main_cycle_timer); // 重置计时器
-          state_machine = MEASURING;
-        }
-        break;
+        TimerEp_SetCounter((Timer *)capture_timer, 0);
+        CaptureTimer_TriggerDown(capture_timer);
+        OrdinaryTimer_Reset(main_cycle_timer);
+        state_machine = MEASURING;
+      break;
 
 
       case MEASURING:
+        // 等待捕获结束
+        osSemaphoreAcquire(MainCycleWaker_Handle, osWaitForever);
+
         // 如果捕获完毕
-        if (CaptureTimer_is_CaptureCplt(capture_timer)) {
-          state_machine = PROCESSING;
-        }
-        break;
+        state_machine = PROCESSING;
+      break;
 
 
       case PROCESSING:
+        // 计算传感器数据
         distance = calc_distance_mm(
           CaptureTimer_LoadCounter_1(capture_timer),
           CaptureTimer_LoadCounter_2(capture_timer)
@@ -325,8 +331,9 @@ void StartMainTask(void *argument)
           PWMSERVO_MAX_COMPARE,
           PWMSERVO_ANGLE_RANGE
         );
+
         state_machine = ROTATE;
-        break;
+      break;
 
 
       case ROTATE:
@@ -334,33 +341,26 @@ void StartMainTask(void *argument)
           servo_pwm_timer,
           AutoCompare_next(auto_compare)
         );
-        OrdinaryTimer_Reset(main_cycle_timer);
-        oled_refresh_req = true;
-        awake_bt_send_data(distance, angle);
         state_machine = COOLING;
-        break;
+      break;
 
 
       case COOLING:
-        // 正在倒计时
-        if (OrdinaryTimer_is_Counting(main_cycle_timer)) break;
+        // 刚进入COOLING，开始倒计时，刷新oled，发送传感器数据
+        OrdinaryTimer_SetCycle_ms(
+          main_cycle_timer,
+          cooling_time_ms
+        );
+        if(enable_oled) awake_oled_update(true);
+        awake_bt_send_data(distance, angle);
 
-        // 刚进入COOLING，开始倒计时
-        if (OrdinaryTimer_is_Reset(main_cycle_timer))
-        {
-          OrdinaryTimer_SetCycle_ms(
-            main_cycle_timer,
-            cooling_time_ms
-          );
-        }
+        // 等待倒计时结束
+        osSemaphoreAcquire(MainCycleWaker_Handle, osWaitForever);
 
         // 倒计时完毕
-        if (OrdinaryTimer_is_CountCplt(main_cycle_timer))
-        {
-          OrdinaryTimer_Reset(main_cycle_timer);
-          state_machine = PAUSE_AND_EVENT_HANDLE;
-        }
-        break;
+        state_machine = PAUSE_AND_EVENT_HANDLE;
+
+      break;
       }
 
       osDelay(1);
@@ -392,7 +392,8 @@ void StartOledTask(void *argument)
       oled_clear_req = false;
       OLED_NewFrame();
       OLED_ShowFrame();
-    } else if (oled_refresh_req && enable_oled) {
+    }
+    else if (oled_refresh_req && enable_oled) {
       oled_refresh_req = false;
       print_sensor_data_on_oled(distance, angle);
     }

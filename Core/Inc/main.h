@@ -31,7 +31,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -54,14 +54,13 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
 
+/*from main.c*/
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim);
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim);
 
 float calc_distance_mm(int up_edge_number, int down_edge_number);
 void print_sensor_data_on_oled(float distance, float angle);
-
-void awake_bt_send_data(float data1, float data2);
-void awake_bt_send_error(uint16_t error_code);
 
 // class AutoCompare_TypeDef {
       typedef struct AutoCompare_TypeDef AutoCompare_TypeDef;
@@ -71,6 +70,13 @@ void awake_bt_send_error(uint16_t error_code);
                                 int operation_type, int value );
 // }
 extern AutoCompare_TypeDef * auto_compare;
+
+/*from freertos.c*/
+
+void awake_bt_send_data(float data1, float data2);
+void awake_bt_send_error(uint16_t error_code);
+void awake_oled_update(bool oled_is_enable);
+void awake_main_task();
 
 /* USER CODE END EFP */
 
@@ -83,6 +89,7 @@ extern AutoCompare_TypeDef * auto_compare;
 #define LED_RED_GPIO_Port GPIOB
 #define KEY1_Pin GPIO_PIN_12
 #define KEY1_GPIO_Port GPIOB
+#define KEY1_EXTI_IRQn EXTI15_10_IRQn
 #define KEY2_Pin GPIO_PIN_13
 #define KEY2_GPIO_Port GPIOB
 #define KEY2_EXTI_IRQn EXTI15_10_IRQn

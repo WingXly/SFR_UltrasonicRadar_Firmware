@@ -152,20 +152,26 @@ AutoCompare_TypeDef * auto_compare = &ac_;
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+extern osSemaphoreId_t MainCycleWaker_Handle;
+
+
 /*GPIO中断回调函数*/
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-    if (GPIO_Pin == KEY2_Pin) // 如果是因为KEY2按下而触发的
-    {
-      LED_toggle(led_blue);
-      enable_oled = !enable_oled;
+  // 启用或禁用oled
+  if (GPIO_Pin == KEY2_Pin) {
+    LED_toggle(led_blue);
+    enable_oled = !enable_oled;
+    if (enable_oled) awake_oled_update(true);
+    else awake_oled_update(false);
+  }
 
-      if (enable_oled) oled_refresh_req = true;
-      else oled_clear_req = true;
-      
-      extern osSemaphoreId_t OledUpdateWakerHandle;
-      osSemaphoreRelease(OledUpdateWakerHandle);
-    }
+  // 启动或暂停
+  else if (GPIO_Pin == KEY1_Pin) {
+    LED_toggle(led_green);
+    LED_toggle(led_red);
+    pause = !pause;
+  }
 }
 
 
@@ -174,7 +180,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   // TIM3的us级计时
   if (htim->Instance == TimerEp_GetInstance((Timer*)main_cycle_timer)) {
+    // 倒计时
     OrdinaryTimer_CountDown(main_cycle_timer);
+
+    // 倒计时结束则唤醒MainTask
+    if (OrdinaryTimer_is_CountCplt(main_cycle_timer)) {
+      awake_main_task();
+    }
   } 
 }
 
@@ -184,10 +196,13 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
   // TIM1捕获上升和下降沿
   if ( htim->Instance == TimerEp_GetInstance((Timer*)capture_timer)
-       && htim->Channel == CaptureTimer_GetActiveChannel(capture_timer)
-       && state_machine == MEASURING )
+       && htim->Channel == CaptureTimer_GetActiveChannel(capture_timer) )
   {
+    // 记录捕获信息
     CaptureTimer_SaveCounter_both(capture_timer);
+    
+    // 唤醒MainTask
+    awake_main_task();
   }
 }
 
