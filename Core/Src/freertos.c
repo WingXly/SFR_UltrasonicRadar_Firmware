@@ -19,7 +19,6 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
-#include "cmsis_os2.h"
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
@@ -116,7 +115,7 @@ void awake_bt_task()
 }
 
 
-void awake_queue_btSendData_(float data1, float data2)
+void put_queue_btSendData_awake(float data1, float data2)
 {
   osMessageQueuePut(queue_btSendData_Handle, &data1, 0, 0);
   osMessageQueuePut(queue_btSendData_Handle, &data2, 0, 0);
@@ -124,15 +123,16 @@ void awake_queue_btSendData_(float data1, float data2)
 }
 
 
-void awake_bt_send_error(uint16_t error_code)
+void put_queue_btSendError_awake(uint16_t error_code)
 {
-    awake_queue_btSendData_(-1.0f, error_code);
+    put_queue_btSendData_awake(-1.0f, error_code);
 }
 
 
-void awake_oled_update(bool oled_is_enable)
+void awake_oled_update(bool oled_is_show)
 {
-  oled_refresh_req = oled_is_enable;
+  oled_refresh_req = oled_is_show;
+  oled_clear_req = !oled_is_show;
   osSemaphoreRelease(binSignal_awake_OledUpdate_Handle);
 }
 
@@ -214,9 +214,13 @@ void MX_FREERTOS_Init(void) {
 
 }
 
-
-
-
+/* USER CODE BEGIN Header_StartTask_Main */
+/**
+  * @brief  Function implementing the Task_Main thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartTask_Main */
 void StartTask_Main(void *argument)
 {
   /* USER CODE BEGIN StartTask_Main */
@@ -287,7 +291,7 @@ void StartTask_Main(void *argument)
           // 不允许冷却时间小于1us
           if (cooling_time_ms < 0.001) {
             cooling_time_ms = cooling_time_old;
-            awake_bt_send_error(0x00);
+            put_queue_btSendError_awake(0x00);
           }
 
           modify_cooling_time_optType = 0;
@@ -359,7 +363,7 @@ void StartTask_Main(void *argument)
           cooling_time_ms
         );
         if(enable_oled) awake_oled_update(true);
-        awake_queue_btSendData_(distance, angle);
+        put_queue_btSendData_awake(distance, angle);
 
         // 等待倒计时结束
         osSemaphoreAcquire(binSignal_awake_MainCycle_Handle, osWaitForever);
@@ -376,9 +380,13 @@ void StartTask_Main(void *argument)
   /* USER CODE END StartTask_Main */
 }
 
-
-
-
+/* USER CODE BEGIN Header_StartTask_OledUpdate */
+/**
+* @brief Function implementing the Task_OledUpdate thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartTask_OledUpdate */
 void StartTask_OledUpdate(void *argument)
 {
   /* USER CODE BEGIN StartTask_OledUpdate */
@@ -406,9 +414,13 @@ void StartTask_OledUpdate(void *argument)
   /* USER CODE END StartTask_OledUpdate */
 }
 
-
-
-
+/* USER CODE BEGIN Header_StartTask_BluetoothIO */
+/**
+* @brief Function implementing the Task_BluetoothIO thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartTask_BluetoothIO */
 void StartTask_BluetoothIO(void *argument)
 {
   /* USER CODE BEGIN StartTask_BluetoothIO */
@@ -430,8 +442,9 @@ void StartTask_BluetoothIO(void *argument)
     }
 
     // event: 如果队列中有需要发送的东西，就发送它们
-    if (osMessageQueueGetCount(queue_btSendData_Handle) >= 2 )
+    if (osMessageQueueGetCount(queue_btSendData_Handle) >= 2)
     {
+      while(!Usart_is_TxCplt(bluetooth));
       // 获取将要发送的数据
       static float sendData_1 = 0;
       static float sendData_2 = 0;

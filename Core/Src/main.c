@@ -131,7 +131,7 @@ void AutoCompare_setStep( AutoCompare_TypeDef * this,
   
   if (this->step < 0) {
     this->step = step_old;
-    awake_bt_send_error(0x00);
+    put_queue_btSendError_awake(0x00);
   } 
 }
 
@@ -159,8 +159,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   if (GPIO_Pin == KEY2_Pin) {
     LED_toggle(led_blue);
     enable_oled = !enable_oled;
-    if (enable_oled) awake_oled_update(true);
-    else awake_oled_update(false);
+  awake_oled_update(enable_oled);
   }
 
   // 启动或暂停
@@ -306,10 +305,10 @@ int main(void)
 
 
   // 启动外设
-  osDelay(20);
+  HAL_Delay(20);
 
   CaptureTimer_Init(capture_timer);
-  OrdinaryTimer_Init(main_cycle_timer);
+  OrdinaryTimer_Init_IT(main_cycle_timer);
   PwmTimer_Init(servo_pwm_timer);
 
   OLED_Init();

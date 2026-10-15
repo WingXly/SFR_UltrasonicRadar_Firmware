@@ -74,7 +74,7 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
         }
         else
         {
-            awake_bt_send_error(0x00);
+            put_queue_btSendError_awake(0x00);
         }
     }
     else if (cmd_type == 1) // 设置OLED屏幕的开或关
@@ -94,13 +94,13 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
         }
         else
         {
-            awake_bt_send_error(0x00);
+            put_queue_btSendError_awake(0x00);
         }
     }
     else
     {
         // 输入的参数个数与指令不匹配
-        awake_bt_send_error(0x01);
+        put_queue_btSendError_awake(0x01);
     }
 }
 
@@ -123,7 +123,7 @@ void command_handler_2para(uint16_t cmd_type, uint16_t para1, uint16_t para2)
     else
     {
         // 输入的参数个数与指令不匹配
-        awake_bt_send_error(0x01);
+        put_queue_btSendError_awake(0x01);
     }
 
 }
