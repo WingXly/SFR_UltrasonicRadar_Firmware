@@ -82,10 +82,22 @@ const osThreadAttr_t Task_BluetoothIO_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityHigh,
 };
+/* Definitions for Task_Measure */
+osThreadId_t Task_MeasureHandle;
+const osThreadAttr_t Task_Measure_attributes = {
+  .name = "Task_Measure",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityBelowNormal1,
+};
 /* Definitions for queue_btSendData_ */
 osMessageQueueId_t queue_btSendData_Handle;
 const osMessageQueueAttr_t queue_btSendData__attributes = {
   .name = "queue_btSendData_"
+};
+/* Definitions for queue_btRxCommand_ */
+osMessageQueueId_t queue_btRxCommand_Handle;
+const osMessageQueueAttr_t queue_btRxCommand__attributes = {
+  .name = "queue_btRxCommand_"
 };
 /* Definitions for binSignal_awake_BtTask_ */
 osSemaphoreId_t binSignal_awake_BtTask_Handle;
@@ -143,6 +155,14 @@ void awake_main_task()
 }
 
 
+void queue_btRxCommand_put(uint16_t * p)
+{
+  osMessageQueuePut(queue_btRxCommand_Handle, p, 0, 0);
+}
+
+
+
+
 
 
 
@@ -151,6 +171,7 @@ void awake_main_task()
 void StartTask_Main(void *argument);
 void StartTask_OledUpdate(void *argument);
 void StartTask_BluetoothIO(void *argument);
+void StartTask_Measure(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -188,7 +209,10 @@ void MX_FREERTOS_Init(void) {
 
   /* Create the queue(s) */
   /* creation of queue_btSendData_ */
-  queue_btSendData_Handle = osMessageQueueNew (8, sizeof(float), &queue_btSendData__attributes);
+  queue_btSendData_Handle = osMessageQueueNew (16, sizeof(float), &queue_btSendData__attributes);
+
+  /* creation of queue_btRxCommand_ */
+  queue_btRxCommand_Handle = osMessageQueueNew (16, sizeof(uint16_t), &queue_btRxCommand__attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -204,6 +228,9 @@ void MX_FREERTOS_Init(void) {
   /* creation of Task_BluetoothIO */
   Task_BluetoothIOHandle = osThreadNew(StartTask_BluetoothIO, NULL, &Task_BluetoothIO_attributes);
 
+  /* creation of Task_Measure */
+  Task_MeasureHandle = osThreadNew(StartTask_Measure, NULL, &Task_Measure_attributes);
+
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
@@ -213,6 +240,9 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_EVENTS */
 
 }
+
+
+
 
 /* USER CODE BEGIN Header_StartTask_Main */
 /**
@@ -227,10 +257,9 @@ void StartTask_Main(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    // 遍历状态机
-    switch (state_machine)
-    {
-      case INIT:
+// 遍历状态机
+switch (state_machine) {
+case INIT:
         // 阻止HC-SR04在INIT状态下工作
         CaptureTimer_TriggerDown(capture_timer);
 
@@ -261,76 +290,45 @@ void StartTask_Main(void *argument)
       break;
 
 
-      case PAUSE_AND_EVENT_HANDLE:
-        // 按按钮（KEY1）暂停或解除暂停的事件放在main.c的HAL_GPIO_EXTI_Callback()里
-
-        // event: 更改compare step
-        if (1 <= modify_step_optType && modify_step_optType <= 3)
-        {
-          AutoCompare_setStep(
-            auto_compare,
-            modify_step_optType,
-            modify_step_value
-          );
-          modify_step_optType = 0;
-        }
-
-        //event: 更改cooling_time
-        if (1 <= modify_cooling_time_optType && modify_cooling_time_optType <=3)
-        {
-          float cooling_time_old = cooling_time_ms;
+case PAUSE_AND_EVENT_HANDLE:
+        // 指令处理
+        uint8_t cmd_type = 0;
+        uint8_t para1 = 0;
+        osMessageQueueGet(queue_btRxCommand_Handle, &cmd_type, 0, 0);
+        osMessageQueueGet(queue_btRxCommand_Handle, &para1, 0, 0);
           
-          if (modify_cooling_time_optType == 1) {        // set
-              cooling_time_ms = (float)modify_cooling_time_value / 1000;
-          } else if (modify_cooling_time_optType == 2) { // add
-              cooling_time_ms += (float)modify_cooling_time_value / 1000;
-          } else if (modify_cooling_time_optType == 3) { // remove
-              cooling_time_ms -= (float)modify_cooling_time_value / 1000;
-          }
-
-          // 不允许冷却时间小于1us
-          if (cooling_time_ms < 0.001) {
-            cooling_time_ms = cooling_time_old;
-            put_queue_btSendError_awake(0x00);
-          }
-
-          modify_cooling_time_optType = 0;
+        if (osMessageQueueGetCount(queue_btRxCommand_Handle) == 0) {
+          command_handler_1para(cmd_type, para1);
+        } else {
+          uint8_t para2 = 0;
+          osMessageQueueGet(queue_btRxCommand_Handle, &para2, 0, 0);
+          command_handler_2para(cmd_type, para1, para2);
         }
-
+        // 按按钮（KEY1）暂停或解除暂停的事件放在main.c的HAL_GPIO_EXTI_Callback()里
         // 如果不处于暂停，则进行下一步
-        if (!pause)
-        {
-          state_machine = TRIG_UP_AND_DOWN;
-        }
+        if (!pause) {
+          state_machine = MEASURING;
+        } else
       break;
 
 
-      case TRIG_UP_AND_DOWN:
+case MEASURING:
         // 刚进入此状态，上拉Trig+开始倒计时
         CaptureTimer_TriggerUp(capture_timer);
         OrdinaryTimer_SetCycle_ms(main_cycle_timer, TRIG_DURATION_ms);
 
-        // 等待倒计时结束
+        // 等待倒计时结束，将Trig下拉，开始捕获
         osSemaphoreAcquire(binSignal_awake_MainCycle_Handle, osWaitForever);
-
-        // 倒计时完毕，将Trig下拉，开始捕获
         TimerEp_SetCounter((Timer *)capture_timer, 0);
         CaptureTimer_TriggerDown(capture_timer);
         OrdinaryTimer_Reset(main_cycle_timer);
-        state_machine = MEASURING;
-      break;
 
-
-      case MEASURING:
         // 等待捕获结束
         osSemaphoreAcquire(binSignal_awake_MainCycle_Handle, osWaitForever);
-
-        // 如果捕获完毕
         state_machine = PROCESSING;
-      break;
 
 
-      case PROCESSING:
+case PROCESSING:
         // 计算传感器数据
         distance = calc_distance_mm(
           CaptureTimer_LoadCounter_1(capture_timer),
@@ -344,19 +342,23 @@ void StartTask_Main(void *argument)
         );
 
         state_machine = ROTATE;
-      break;
 
 
-      case ROTATE:
-        PwmTimer_SetCompare(
-          servo_pwm_timer,
-          AutoCompare_next(auto_compare)
-        );
+case ROTATE:
+        if (resample_remain) {
+          resample_remain --;
+        } else {
+          resample_remain = resample;
+          PwmTimer_SetCompare(
+            servo_pwm_timer,
+            AutoCompare_next(auto_compare)
+          );
+        }
+        
         state_machine = COOLING;
-      break;
 
 
-      case COOLING:
+case COOLING:
         // 刚进入COOLING，开始倒计时，刷新oled，发送传感器数据
         OrdinaryTimer_SetCycle_ms(
           main_cycle_timer,
@@ -370,15 +372,16 @@ void StartTask_Main(void *argument)
 
         // 倒计时完毕
         state_machine = PAUSE_AND_EVENT_HANDLE;
-
-      break;
-      }
+}
 
       osDelay(1);
   }
 
   /* USER CODE END StartTask_Main */
 }
+
+
+
 
 /* USER CODE BEGIN Header_StartTask_OledUpdate */
 /**
@@ -413,6 +416,9 @@ void StartTask_OledUpdate(void *argument)
   }
   /* USER CODE END StartTask_OledUpdate */
 }
+
+
+
 
 /* USER CODE BEGIN Header_StartTask_BluetoothIO */
 /**
@@ -473,6 +479,27 @@ void StartTask_BluetoothIO(void *argument)
     osDelay(1);
   }
   /* USER CODE END StartTask_BluetoothIO */
+}
+
+
+
+
+/* USER CODE BEGIN Header_StartTask_Measure */
+/**
+* @brief Function implementing the Task_Measure thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartTask_Measure */
+void StartTask_Measure(void *argument)
+{
+  /* USER CODE BEGIN StartTask_Measure */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END StartTask_Measure */
 }
 
 /* Private application code --------------------------------------------------*/

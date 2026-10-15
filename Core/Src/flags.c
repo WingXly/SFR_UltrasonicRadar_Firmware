@@ -1,4 +1,5 @@
 #include "flags.h"
+#include <stdint.h>
 
 StateMachine_TypeDef state_machine = INIT;
 
@@ -8,12 +9,8 @@ bool enable_oled = false;
 bool oled_refresh_req = false;
 bool oled_clear_req = false;
 float cooling_time_ms = 30.0f;
-
-
-int modify_step_optType = 0;
-int modify_step_value = 0;
-int modify_cooling_time_optType = 0;
-int modify_cooling_time_value = 0;
+uint8_t resample = 0;
+uint8_t resample_remain = 0;
 
 
 Usart * bluetooth = NULL;

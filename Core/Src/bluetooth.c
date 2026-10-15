@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include "cmsis_os.h"
 #include "led.h"
 #include "main.h"
 #include "stm32f1xx_hal_def.h"
@@ -44,13 +45,16 @@ void cmd_handler(Usart * from)
     if (n == 5) {
         uint16_t cmd_type = (cmd[3] << 8) + cmd[4];
         uint16_t para = (cmd[5] << 8) + cmd[6];
-        command_handler_1para(cmd_type, para);
+        queue_btRxCommand_put(&cmd_type);
+        queue_btRxCommand_put(&para);
     }
     else if (n == 7) {
         uint16_t cmd_type = (cmd[3] << 8) + cmd[4];
         uint16_t para1 = (cmd[5] << 8) + cmd[6];
         uint16_t para2 = (cmd[7] << 8) + cmd[8];
-        command_handler_2para(cmd_type, para1, para2);
+        queue_btRxCommand_put(&cmd_type);
+        queue_btRxCommand_put(&para1);
+        queue_btRxCommand_put(&para2);
     }
 }
 
@@ -97,6 +101,10 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
             put_queue_btSendError_awake(0x00);
         }
     }
+    else if (cmd_type == 4)
+    {
+        resample = para;
+    }
     else
     {
         // 输入的参数个数与指令不匹配
@@ -110,15 +118,29 @@ void command_handler_2para(uint16_t cmd_type, uint16_t para1, uint16_t para2)
 {
     if (cmd_type == 2)      // 设置 compare_step。将para一比一转换
     {
-        // 只发送修改请求，具体逻辑在freertos.c/StartTask_Main()中实现
-        modify_step_optType = para1;
-        modify_step_value = para2;
+        AutoCompare_setStep(
+            auto_compare,
+            para1,
+            para2
+        );
     }
     else if (cmd_type == 3) // 设置 cooling_time_ms。将para除以1000后转换
     {
-        // 只发送修改请求，具体逻辑在freertos.c/StartTask_Main()中实现
-        modify_cooling_time_optType = para1;
-        modify_cooling_time_value = para2;
+        float cooling_time_old = cooling_time_ms;
+          
+        if (para1 == 1) {        // set
+            cooling_time_ms = (float)para2 / 1000;
+        } else if (para1 == 2) { // add
+            cooling_time_ms += (float)para2 / 1000;
+        } else if (para1 == 3) { // remove
+            cooling_time_ms -= (float)para2 / 1000;
+        }
+
+        // 不允许冷却时间小于1us
+        if (cooling_time_ms < 0.001) {
+            cooling_time_ms = cooling_time_old;
+            put_queue_btSendError_awake(0x00);
+        }
     }
     else
     {

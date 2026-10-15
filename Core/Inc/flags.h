@@ -2,6 +2,7 @@
 #define __FLAGS__H_
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "main.h"
 #include "usart_ep.h"
@@ -29,11 +30,10 @@
 typedef enum {
   INIT,                   // 初始化
   PAUSE_AND_EVENT_HANDLE, // 暂停与事件处理
-  TRIG_UP_AND_DOWN,       // <main> 上拉与下拉触发器
-  MEASURING,              // <TIM1> 超声波测距仪正在测距
-  PROCESSING,             // <main> 计算距离与处理OLED显示
-  ROTATE,                 // <main> 发布舵机旋转指令
-  COOLING                 // <TIM3> 冷却
+  MEASURING,              // 超声波测距仪正在测距
+  PROCESSING,             // 计算距离与处理OLED显示
+  ROTATE,                 // 发布舵机旋转指令
+  COOLING                 // 冷却
 } StateMachine_TypeDef;
 
 
@@ -46,11 +46,8 @@ extern bool enable_oled;
 extern bool oled_refresh_req;
 extern bool oled_clear_req;
 extern float cooling_time_ms;
-
-extern int modify_step_optType;
-extern int modify_step_value;
-extern int modify_cooling_time_optType;
-extern int modify_cooling_time_value;
+extern uint8_t resample;
+extern uint8_t resample_remain;
 
 extern Usart * bluetooth;
 extern LED * led_red;

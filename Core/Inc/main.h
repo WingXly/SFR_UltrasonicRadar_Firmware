@@ -78,6 +78,7 @@ void put_queue_btSendData(float data1, float data2);
 void put_queue_btSendError_awake(uint16_t error_code);
 void awake_oled_update(bool oled_is_enable);
 void awake_main_task();
+void queue_btRxCommand_put(uint16_t * p);
 
 /* USER CODE END EFP */
 
