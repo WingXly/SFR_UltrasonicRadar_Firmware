@@ -181,7 +181,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
     // 倒计时结束则唤醒Task_Main
     if (OrdinaryTimer_is_CountCplt(main_cycle_timer)) {
-      awake_main_task();
+      main_cycle_done_awake();
     }
   } 
 }
@@ -198,7 +198,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
     CaptureTimer_SaveCounter_both(capture_timer);
     
     // 唤醒Task_Main
-    awake_main_task();
+    capture_done_awake();
   }
 }
 

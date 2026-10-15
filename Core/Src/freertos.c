@@ -19,6 +19,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
+#include "cmsis_os2.h"
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
@@ -34,7 +35,7 @@
 #include <stdio.h>
 #include "bluetooth.h"
 #include "usart_ep.h"
-
+#include "state_t.h"
 #include "flags.h"
 /* USER CODE END Includes */
 
@@ -82,13 +83,6 @@ const osThreadAttr_t Task_BluetoothIO_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityHigh,
 };
-/* Definitions for Task_Measure */
-osThreadId_t Task_MeasureHandle;
-const osThreadAttr_t Task_Measure_attributes = {
-  .name = "Task_Measure",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityBelowNormal1,
-};
 /* Definitions for queue_btSendData_ */
 osMessageQueueId_t queue_btSendData_Handle;
 const osMessageQueueAttr_t queue_btSendData__attributes = {
@@ -109,10 +103,15 @@ osSemaphoreId_t binSignal_awake_OledUpdate_Handle;
 const osSemaphoreAttr_t binSignal_awake_OledUpdate__attributes = {
   .name = "binSignal_awake_OledUpdate_"
 };
-/* Definitions for binSignal_awake_MainCycle_ */
-osSemaphoreId_t binSignal_awake_MainCycle_Handle;
-const osSemaphoreAttr_t binSignal_awake_MainCycle__attributes = {
-  .name = "binSignal_awake_MainCycle_"
+/* Definitions for binSignal_MainCycleDone_ */
+osSemaphoreId_t binSignal_MainCycleDone_Handle;
+const osSemaphoreAttr_t binSignal_MainCycleDone__attributes = {
+  .name = "binSignal_MainCycleDone_"
+};
+/* Definitions for binSignal_CaptureDone_ */
+osSemaphoreId_t binSignal_CaptureDone_Handle;
+const osSemaphoreAttr_t binSignal_CaptureDone__attributes = {
+  .name = "binSignal_CaptureDone_"
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -149,9 +148,15 @@ void awake_oled_update(bool oled_is_show)
 }
 
 
-void awake_main_task()
+void main_cycle_done_awake()
 {
-  osSemaphoreRelease(binSignal_awake_MainCycle_Handle);
+  osSemaphoreRelease(binSignal_MainCycleDone_Handle);
+}
+
+
+void capture_done_awake()
+{
+  osSemaphoreRelease(binSignal_CaptureDone_Handle);
 }
 
 
@@ -171,7 +176,6 @@ void queue_btRxCommand_put(uint16_t * p)
 void StartTask_Main(void *argument);
 void StartTask_OledUpdate(void *argument);
 void StartTask_BluetoothIO(void *argument);
-void StartTask_Measure(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -196,8 +200,11 @@ void MX_FREERTOS_Init(void) {
   /* creation of binSignal_awake_OledUpdate_ */
   binSignal_awake_OledUpdate_Handle = osSemaphoreNew(1, 0, &binSignal_awake_OledUpdate__attributes);
 
-  /* creation of binSignal_awake_MainCycle_ */
-  binSignal_awake_MainCycle_Handle = osSemaphoreNew(1, 0, &binSignal_awake_MainCycle__attributes);
+  /* creation of binSignal_MainCycleDone_ */
+  binSignal_MainCycleDone_Handle = osSemaphoreNew(1, 0, &binSignal_MainCycleDone__attributes);
+
+  /* creation of binSignal_CaptureDone_ */
+  binSignal_CaptureDone_Handle = osSemaphoreNew(1, 0, &binSignal_CaptureDone__attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -209,7 +216,7 @@ void MX_FREERTOS_Init(void) {
 
   /* Create the queue(s) */
   /* creation of queue_btSendData_ */
-  queue_btSendData_Handle = osMessageQueueNew (16, sizeof(float), &queue_btSendData__attributes);
+  queue_btSendData_Handle = osMessageQueueNew (8, sizeof(float), &queue_btSendData__attributes);
 
   /* creation of queue_btRxCommand_ */
   queue_btRxCommand_Handle = osMessageQueueNew (16, sizeof(uint16_t), &queue_btRxCommand__attributes);
@@ -228,9 +235,6 @@ void MX_FREERTOS_Init(void) {
   /* creation of Task_BluetoothIO */
   Task_BluetoothIOHandle = osThreadNew(StartTask_BluetoothIO, NULL, &Task_BluetoothIO_attributes);
 
-  /* creation of Task_Measure */
-  Task_MeasureHandle = osThreadNew(StartTask_Measure, NULL, &Task_Measure_attributes);
-
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
@@ -240,9 +244,6 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_EVENTS */
 
 }
-
-
-
 
 /* USER CODE BEGIN Header_StartTask_Main */
 /**
@@ -254,134 +255,21 @@ void MX_FREERTOS_Init(void) {
 void StartTask_Main(void *argument)
 {
   /* USER CODE BEGIN StartTask_Main */
+  StateFunction_TypeDef next_state = INIT;
   /* Infinite loop */
   for(;;)
   {
-// 遍历状态机
-switch (state_machine) {
-case INIT:
-        // 阻止HC-SR04在INIT状态下工作
-        CaptureTimer_TriggerDown(capture_timer);
-
-        // 启动时暂停
-        LED_off(led_green);
-        LED_on(led_red);
-        pause = true;
-
-        // 启动时不启用OLED输出
-        oled_refresh_req = 0;
-        LED_off(led_blue);
-
-        // 重置计时器
-        OrdinaryTimer_Reset(main_cycle_timer);
-
-        // 启动时将舵机置于0度
-        PwmTimer_SetCompare(servo_pwm_timer, PWMSERVO_MIN_COMPARE);
-
-        // 启用蓝牙发送和接收
-        Usart_mark_RxCplt(bluetooth, 1);
-        Usart_mark_TxCplt(bluetooth, 1);
-
-        // 等待接收命令
-        Usart_ReceiveToIdle_DMA_noHT(bluetooth);
-
-        osDelay(100);
-        state_machine = PAUSE_AND_EVENT_HANDLE;
-      break;
-
-
-case PAUSE_AND_EVENT_HANDLE:
-        // 指令处理
-        uint8_t cmd_type = 0;
-        uint8_t para1 = 0;
-        osMessageQueueGet(queue_btRxCommand_Handle, &cmd_type, 0, 0);
-        osMessageQueueGet(queue_btRxCommand_Handle, &para1, 0, 0);
-          
-        if (osMessageQueueGetCount(queue_btRxCommand_Handle) == 0) {
-          command_handler_1para(cmd_type, para1);
-        } else {
-          uint8_t para2 = 0;
-          osMessageQueueGet(queue_btRxCommand_Handle, &para2, 0, 0);
-          command_handler_2para(cmd_type, para1, para2);
-        }
-        // 按按钮（KEY1）暂停或解除暂停的事件放在main.c的HAL_GPIO_EXTI_Callback()里
-        // 如果不处于暂停，则进行下一步
-        if (!pause) {
-          state_machine = MEASURING;
-        } else
-      break;
-
-
-case MEASURING:
-        // 刚进入此状态，上拉Trig+开始倒计时
-        CaptureTimer_TriggerUp(capture_timer);
-        OrdinaryTimer_SetCycle_ms(main_cycle_timer, TRIG_DURATION_ms);
-
-        // 等待倒计时结束，将Trig下拉，开始捕获
-        osSemaphoreAcquire(binSignal_awake_MainCycle_Handle, osWaitForever);
-        TimerEp_SetCounter((Timer *)capture_timer, 0);
-        CaptureTimer_TriggerDown(capture_timer);
-        OrdinaryTimer_Reset(main_cycle_timer);
-
-        // 等待捕获结束
-        osSemaphoreAcquire(binSignal_awake_MainCycle_Handle, osWaitForever);
-        state_machine = PROCESSING;
-
-
-case PROCESSING:
-        // 计算传感器数据
-        distance = calc_distance_mm(
-          CaptureTimer_LoadCounter_1(capture_timer),
-          CaptureTimer_LoadCounter_2(capture_timer)
-        );
-        angle = PwmTimer_GetCompare_AsServoAngle(
-          servo_pwm_timer,
-          PWMSERVO_MIN_COMPARE,
-          PWMSERVO_MAX_COMPARE,
-          PWMSERVO_ANGLE_RANGE
-        );
-
-        state_machine = ROTATE;
-
-
-case ROTATE:
-        if (resample_remain) {
-          resample_remain --;
-        } else {
-          resample_remain = resample;
-          PwmTimer_SetCompare(
-            servo_pwm_timer,
-            AutoCompare_next(auto_compare)
-          );
-        }
-        
-        state_machine = COOLING;
-
-
-case COOLING:
-        // 刚进入COOLING，开始倒计时，刷新oled，发送传感器数据
-        OrdinaryTimer_SetCycle_ms(
-          main_cycle_timer,
-          cooling_time_ms
-        );
-        if(enable_oled) awake_oled_update(true);
-        put_queue_btSendData_awake(distance, angle);
-
-        // 等待倒计时结束
-        osSemaphoreAcquire(binSignal_awake_MainCycle_Handle, osWaitForever);
-
-        // 倒计时完毕
-        state_machine = PAUSE_AND_EVENT_HANDLE;
-}
-
-      osDelay(1);
+    StateMachine_TypeDef state_function = state_machine[next_state]; // 状态机递进
+    if (state_function != NULL) {
+      next_state = state_function();  // 状态机执行
+    } else {
+      osDelay(1000);
+      next_state = INIT; // 异常时回到初始化
+    }
   }
 
   /* USER CODE END StartTask_Main */
 }
-
-
-
 
 /* USER CODE BEGIN Header_StartTask_OledUpdate */
 /**
@@ -416,9 +304,6 @@ void StartTask_OledUpdate(void *argument)
   }
   /* USER CODE END StartTask_OledUpdate */
 }
-
-
-
 
 /* USER CODE BEGIN Header_StartTask_BluetoothIO */
 /**
@@ -481,29 +366,131 @@ void StartTask_BluetoothIO(void *argument)
   /* USER CODE END StartTask_BluetoothIO */
 }
 
-
-
-
-/* USER CODE BEGIN Header_StartTask_Measure */
-/**
-* @brief Function implementing the Task_Measure thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartTask_Measure */
-void StartTask_Measure(void *argument)
-{
-  /* USER CODE BEGIN StartTask_Measure */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END StartTask_Measure */
-}
-
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 
 /* USER CODE END Application */
 
+
+StateFunction_TypeDef State_Init(void)
+{
+  // 阻止HC-SR04在INIT状态下工作
+  CaptureTimer_TriggerDown(capture_timer);
+
+  // 启动时暂停
+  LED_off(led_green);
+  LED_on(led_red);
+  pause = true;
+
+  // 启动时不启用OLED输出
+  oled_refresh_req = 0;
+  LED_off(led_blue);
+
+  // 重置计时器
+  OrdinaryTimer_Reset(main_cycle_timer);
+
+  // 启动时将舵机置于0度
+  PwmTimer_SetCompare(servo_pwm_timer, PWMSERVO_MIN_COMPARE);
+
+  // 启用蓝牙发送和接收
+  Usart_mark_RxCplt(bluetooth, 1);
+  Usart_mark_TxCplt(bluetooth, 1);
+
+  // 等待接收命令
+  Usart_ReceiveToIdle_DMA_noHT(bluetooth);
+
+  osDelay(100);
+  return PAUSE_APPEND;
+}
+
+
+StateFunction_TypeDef State_Pause_append(void)
+{
+  // 指令处理
+  uint8_t cmd_type = 0;
+  uint8_t para1 = 0;
+  osMessageQueueGet(queue_btRxCommand_Handle, &cmd_type, 0, 0);
+  osMessageQueueGet(queue_btRxCommand_Handle, &para1, 0, 0);
+          
+  if (osMessageQueueGetCount(queue_btRxCommand_Handle) == 0) {
+    command_handler_1para(cmd_type, para1);
+  } else {
+    uint8_t para2 = 0;
+    osMessageQueueGet(queue_btRxCommand_Handle, &para2, 0, 0);
+    command_handler_2para(cmd_type, para1, para2);
+  }
+  // 按按钮（KEY1）暂停或解除暂停的事件放在main.c的HAL_GPIO_EXTI_Callback()里
+  // 如果不处于暂停，则进行下一步
+  if (!pause) return MEASURING;
+  else return PAUSE_APPEND;
+}
+
+
+StateFunction_TypeDef State_Measuring(void)
+{
+  // 刚进入此状态，上拉Trig+开始倒计时
+  CaptureTimer_TriggerUp(capture_timer);
+  OrdinaryTimer_SetCycle_ms(main_cycle_timer, TRIG_DURATION_ms);
+
+  // 等待倒计时结束，将Trig下拉，开始捕获
+  osSemaphoreAcquire(binSignal_MainCycleDone_Handle, osWaitForever);
+  TimerEp_SetCounter((Timer *)capture_timer, 0);
+  CaptureTimer_TriggerDown(capture_timer);
+  OrdinaryTimer_Reset(main_cycle_timer);
+
+  // 等待捕获结束
+  osSemaphoreAcquire(binSignal_CaptureDone_Handle, osWaitForever);
+  return PROCESSING;
+}
+
+
+StateFunction_TypeDef State_Processing(void)
+{
+  // 计算传感器数据
+  distance = calc_distance_mm(
+    CaptureTimer_LoadCounter_1(capture_timer),
+    CaptureTimer_LoadCounter_2(capture_timer)
+  );
+  angle = PwmTimer_GetCompare_AsServoAngle(
+    servo_pwm_timer,
+    PWMSERVO_MIN_COMPARE,
+    PWMSERVO_MAX_COMPARE,
+    PWMSERVO_ANGLE_RANGE
+  );
+
+  return ROTATING;
+}
+
+
+StateFunction_TypeDef State_Rotating(void)
+{
+  if (resample_remain) {
+    resample_remain --;
+  } else {
+    resample_remain = resample;
+    PwmTimer_SetCompare(
+      servo_pwm_timer,
+      AutoCompare_next(auto_compare)
+    );
+  }
+        
+  return COOLING;
+}
+
+
+StateFunction_TypeDef State_Cooling(void)
+{
+  // 刚进入COOLING，开始倒计时，刷新oled，发送传感器数据
+  OrdinaryTimer_SetCycle_ms(
+    main_cycle_timer,
+    cooling_time_ms
+  );
+  if(enable_oled) awake_oled_update(true);
+  put_queue_btSendData_awake(distance, angle);
+
+  // 等待倒计时结束
+  osSemaphoreAcquire(binSignal_MainCycleDone_Handle, osWaitForever);
+
+  // 倒计时完毕
+  return PAUSE_APPEND;
+}

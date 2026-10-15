@@ -25,21 +25,7 @@
 // PWM舵机的角度范围
 #define PWMSERVO_ANGLE_RANGE 180.0f
 
-
-// 状态机
-typedef enum {
-  INIT,                   // 初始化
-  PAUSE_AND_EVENT_HANDLE, // 暂停与事件处理
-  MEASURING,              // 超声波测距仪正在测距
-  PROCESSING,             // 计算距离与处理OLED显示
-  ROTATE,                 // 发布舵机旋转指令
-  COOLING                 // 冷却
-} StateMachine_TypeDef;
-
-
 /*全局标识符，采用extern防止暂定定义*/
-
-extern StateMachine_TypeDef state_machine;
 
 extern bool pause;
 extern bool enable_oled;

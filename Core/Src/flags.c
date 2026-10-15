@@ -1,7 +1,7 @@
 #include "flags.h"
 #include <stdint.h>
 
-StateMachine_TypeDef state_machine = INIT;
+
 
 
 bool pause = false;
