@@ -27,14 +27,6 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "led.h"
-#include "oled.h"
-#include "font.h"
-#include "timer_ep.h"
-#include <stdio.h>
-#include "bluetooth.h"
-#include "usart_ep.h"
-
 #include "flags.h"
 /* USER CODE END Includes */
 
@@ -208,7 +200,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
   // 只对传输完成进行标注，不唤醒蓝牙任务
-  if (huart == Usart_pHuart(bluetooth)) {
+  if (huart == Usart_GetpHuart(bluetooth)) {
       Usart_mark_TxCplt(bluetooth, 1);
   }
 }
@@ -217,7 +209,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 /*串口Rx回调函数*/
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
-  if (huart == Usart_pHuart(bluetooth)) {
+  if (huart == Usart_GetpHuart(bluetooth)) {
     Usart_mark_RxCplt(bluetooth, 1);
     Usart_mark_RxSize(bluetooth, Size);
     awake_bt_task();

@@ -3,11 +3,21 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
-#include "main.h"
 #include "usart_ep.h"
 #include "led.h"
 #include "timer_ep.h"
+#include "oled.h"
+#include "bluetooth.h"
+#include "state_t.h"
+#include "font.h"
+
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+
+
 
 
 // 声速
@@ -24,6 +34,9 @@
 
 // PWM舵机的角度范围
 #define PWMSERVO_ANGLE_RANGE 180.0f
+
+// 默认指令数字，也可以作为指令结束标志
+#define DEFAULT_CMD_CODE 65535
 
 /*全局标识符，采用extern防止暂定定义*/
 

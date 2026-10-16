@@ -11,23 +11,24 @@ Usart * Usart_Instantiate(  UART_HandleTypeDef * huart,
                             DMA_HandleTypeDef * DMA_handle_tx );
 void Usart_Free(Usart * this);
 
-uint8_t * Usart_pReceiveData(Usart * this);
-UART_HandleTypeDef * Usart_pHuart(Usart * this);
+void Usart_Enable_IO(Usart * this);
+uint8_t * Usart_GetpReceiveData(Usart * this);
+UART_HandleTypeDef * Usart_GetpHuart(Usart * this);
 
-int Usart_is_RxCplt(Usart * this);
-int Usart_is_TxCplt(Usart * this);
-void Usart_mark_RxCplt(Usart * this, int Cplt);
-void Usart_mark_TxCplt(Usart * this, int Cplt);
-int Usart_Get_RxSize(Usart * this);
-void Usart_mark_RxSize(Usart * this, int size);
+bool Usart_is_RxCplt(Usart * this);
+bool Usart_is_TxCplt(Usart * this);
+void Usart_mark_RxCplt(Usart * this, bool is_it_cplt);
+void Usart_mark_TxCplt(Usart * this, bool is_it_cplt);
+uint16_t Usart_Get_RxSize(Usart * this);
+void Usart_mark_RxSize(Usart * this, uint16_t size);
 
-void Usart_ReceiveToIdle_DMA_noHT(Usart * this);
-void Usart_ReceiveToIdle_DMA_HT(Usart * this);
-void Usart_Transmit_DMA_noHT(Usart * this, uint8_t * pSendData_static, int size);
-void Usart_Transmit_DMA_HT(Usart * this, uint8_t * pSendData_static, int size);
+HAL_StatusTypeDef Usart_ReceiveToIdle_DMA_noHT(Usart * this);
+HAL_StatusTypeDef Usart_ReceiveToIdle_DMA_HT(Usart * this);
+HAL_StatusTypeDef Usart_Transmit_DMA_noHT(Usart * this, uint8_t * pSendData_static, int size);
+HAL_StatusTypeDef Usart_Transmit_DMA_HT(Usart * this, uint8_t * pSendData_static, int size);
 
-void Usart_ReceiveToIdle_IT(Usart * this);
-void Usart_Transmit_IT(Usart * this, uint8_t * pSendData_static, int size);
+HAL_StatusTypeDef Usart_ReceiveToIdle_IT(Usart * this);
+HAL_StatusTypeDef Usart_Transmit_IT(Usart * this, uint8_t * pSendData_static, int size);
 
 HAL_StatusTypeDef Usart_Transmit(Usart * this, uint8_t * pSendData, int size, uint32_t timeOut);
 

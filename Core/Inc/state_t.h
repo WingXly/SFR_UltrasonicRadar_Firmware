@@ -22,7 +22,6 @@ extern StateFunction_TypeDef State_Processing(void);
 extern StateFunction_TypeDef State_Rotating(void);
 extern StateFunction_TypeDef State_Cooling(void);
 
-// 函数指针表：下标就是状态枚举值
 extern const StateMachine_TypeDef state_machine[STATE_NUM];
 
 void StateMachine_Run__dont_use_this(void);

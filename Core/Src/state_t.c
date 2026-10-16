@@ -1,4 +1,5 @@
 #include "state_t.h"
+#include "stdlib.h"
 
 const StateMachine_TypeDef state_machine[STATE_NUM] = {
     [0] = State_Init,
@@ -8,8 +9,6 @@ const StateMachine_TypeDef state_machine[STATE_NUM] = {
     [4] = State_Rotating,
     [5] = State_Cooling
 };
-
-#include <stdlib.h>
 
 
 void StateMachine_Run__dont_use_this(void) {

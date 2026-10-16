@@ -19,23 +19,14 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
+#include "bluetooth.h"
 #include "cmsis_os2.h"
 #include "task.h"
-#include "main.h"
 #include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
-#include "led.h"
-#include "oled.h"
-#include "timer_ep.h"
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
-#include "bluetooth.h"
-#include "usart_ep.h"
-#include "state_t.h"
+#include "main.h"
 #include "flags.h"
 /* USER CODE END Includes */
 
@@ -255,7 +246,7 @@ void MX_FREERTOS_Init(void) {
 void StartTask_Main(void *argument)
 {
   /* USER CODE BEGIN StartTask_Main */
-  StateFunction_TypeDef next_state = INIT;
+  States_TypeDef next_state = INIT;
   /* Infinite loop */
   for(;;)
   {
@@ -375,6 +366,7 @@ void StartTask_BluetoothIO(void *argument)
 StateFunction_TypeDef State_Init(void)
 {
   // 阻止HC-SR04在INIT状态下工作
+  CaptureTimer_Reset(capture_timer);
   CaptureTimer_TriggerDown(capture_timer);
 
   // 启动时暂停
@@ -386,17 +378,11 @@ StateFunction_TypeDef State_Init(void)
   oled_refresh_req = 0;
   LED_off(led_blue);
 
-  // 重置计时器
-  OrdinaryTimer_Reset(main_cycle_timer);
-
   // 启动时将舵机置于0度
   PwmTimer_SetCompare(servo_pwm_timer, PWMSERVO_MIN_COMPARE);
 
   // 启用蓝牙发送和接收
-  Usart_mark_RxCplt(bluetooth, 1);
-  Usart_mark_TxCplt(bluetooth, 1);
-
-  // 等待接收命令
+  Usart_Enable_IO(bluetooth);
   Usart_ReceiveToIdle_DMA_noHT(bluetooth);
 
   osDelay(100);
@@ -406,19 +392,29 @@ StateFunction_TypeDef State_Init(void)
 
 StateFunction_TypeDef State_Pause_append(void)
 {
-  // 指令处理
-  static uint8_t cmd_type = 0;
-  static uint8_t para1 = 0;
-  static uint8_t para2 = 0;
-  if (osMessageQueueGetCount(queue_btRxCommand_Handle) == 2) {
-    osMessageQueueGet(queue_btRxCommand_Handle, &cmd_type, 0, 0);
-    osMessageQueueGet(queue_btRxCommand_Handle, &para1, 0, 0);
-    command_handler_1para(cmd_type, para1);
-  } else if (osMessageQueueGetCount(queue_btRxCommand_Handle) == 3) {
-    osMessageQueueGet(queue_btRxCommand_Handle, &cmd_type, 0, 0);
-    osMessageQueueGet(queue_btRxCommand_Handle, &para1, 0, 0);
-    osMessageQueueGet(queue_btRxCommand_Handle, &para2, 0, 0);
-    command_handler_2para(cmd_type, para1, para2);
+  // 从队列中获取命令，然后执行它们
+  uint16_t temp = DEFAULT_CMD_CODE;
+  uint16_t ctype = DEFAULT_CMD_CODE;
+  uint16_t para1 = DEFAULT_CMD_CODE;
+  uint16_t para2 = DEFAULT_CMD_CODE;
+  while (osMessageQueueGetCount(queue_btRxCommand_Handle) > 0) {
+    osMessageQueueGet(queue_btRxCommand_Handle, &temp, 0, 0);
+
+    if (temp == DEFAULT_CMD_CODE) {
+      if (ctype != DEFAULT_CMD_CODE && para1 != DEFAULT_CMD_CODE && para2 == DEFAULT_CMD_CODE) {
+        cmd_executor_1para(ctype, para1);
+      } else if (ctype != DEFAULT_CMD_CODE && para1 != DEFAULT_CMD_CODE && para2 != DEFAULT_CMD_CODE) {
+        cmd_executor_2para(ctype, para1, para2);
+      }
+      ctype = DEFAULT_CMD_CODE;
+      para1 = DEFAULT_CMD_CODE;
+      para2 = DEFAULT_CMD_CODE;
+      continue;
+    }
+
+    else if (ctype == DEFAULT_CMD_CODE) ctype = temp;
+    else if (para1 == DEFAULT_CMD_CODE) para1 = temp;
+    else if (para2 == DEFAULT_CMD_CODE) para2 = temp;
   }
   // 按按钮（KEY1）暂停或解除暂停的事件放在main.c的HAL_GPIO_EXTI_Callback()里
   // 如果不处于暂停，则进行下一步
@@ -429,18 +425,19 @@ StateFunction_TypeDef State_Pause_append(void)
 
 StateFunction_TypeDef State_Measuring(void)
 {
-  // 刚进入此状态，上拉Trig+开始倒计时
+  // 刚进入此状态，上拉Trig
+  CaptureTimer_Reset(capture_timer);
   CaptureTimer_TriggerUp(capture_timer);
+
+  // 倒计时
   OrdinaryTimer_SetCycle_ms(main_cycle_timer, TRIG_DURATION_ms);
-
-  // 等待倒计时结束，将Trig下拉，开始捕获
   osSemaphoreAcquire(binSignal_MainCycleDone_Handle, osWaitForever);
-  TimerEp_SetCounter((Timer *)capture_timer, 0);
-  CaptureTimer_TriggerDown(capture_timer);
-  OrdinaryTimer_Reset(main_cycle_timer);
 
-  // 等待捕获结束
+  // 倒计时结束，将Trig下拉，开始捕获
+  CaptureTimer_TriggerDown(capture_timer);
   osSemaphoreAcquire(binSignal_CaptureDone_Handle, osWaitForever);
+
+  // 捕获结束
   return PROCESSING;
 }
 
@@ -448,17 +445,12 @@ StateFunction_TypeDef State_Measuring(void)
 StateFunction_TypeDef State_Processing(void)
 {
   // 计算传感器数据
-  distance = calc_distance_mm(
-    CaptureTimer_LoadCounter_1(capture_timer),
-    CaptureTimer_LoadCounter_2(capture_timer)
-  );
-  angle = PwmTimer_GetCompare_AsServoAngle(
-    servo_pwm_timer,
-    PWMSERVO_MIN_COMPARE,
-    PWMSERVO_MAX_COMPARE,
-    PWMSERVO_ANGLE_RANGE
-  );
-
+  distance = calc_distance_mm(CaptureTimer_LoadCounter_1(capture_timer),
+                              CaptureTimer_LoadCounter_2(capture_timer));
+  angle = PwmTimerEx_GetCompare_AsServoAngle(servo_pwm_timer,
+                                             PWMSERVO_MIN_COMPARE,
+                                             PWMSERVO_MAX_COMPARE,
+                                             PWMSERVO_ANGLE_RANGE);
   return ROTATING;
 }
 
@@ -469,10 +461,8 @@ StateFunction_TypeDef State_Rotating(void)
     resample_remain --;
   } else {
     resample_remain = resample;
-    PwmTimer_SetCompare(
-      servo_pwm_timer,
-      AutoCompare_next(auto_compare)
-    );
+    PwmTimer_SetCompare(servo_pwm_timer,
+                        AutoCompare_next(auto_compare));
   }
         
   return COOLING;
@@ -481,15 +471,12 @@ StateFunction_TypeDef State_Rotating(void)
 
 StateFunction_TypeDef State_Cooling(void)
 {
-  // 刚进入COOLING，开始倒计时，刷新oled，发送传感器数据
-  OrdinaryTimer_SetCycle_ms(
-    main_cycle_timer,
-    cooling_time_ms
-  );
+  // 刚进入COOLING，刷新oled，发送传感器数据
   if(enable_oled) awake_oled_update(true);
   put_queue_btSendData_awake(distance, angle);
 
-  // 等待倒计时结束
+  // 开始倒计时，等待倒计时结束
+  OrdinaryTimer_SetCycle_ms(main_cycle_timer, cooling_time_ms);
   osSemaphoreAcquire(binSignal_MainCycleDone_Handle, osWaitForever);
 
   // 倒计时完毕

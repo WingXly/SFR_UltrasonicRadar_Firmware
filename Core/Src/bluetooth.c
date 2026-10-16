@@ -6,25 +6,16 @@
  * @attention
  * license MIT
  */
-#include "bluetooth.h"
-#include <stdbool.h>
-#include <stdint.h>
-#include <string.h>
-#include "cmsis_os.h"
-#include "led.h"
-#include "main.h"
-#include "stm32f1xx_hal_def.h"
-#include "usart_ep.h"
-#include "stm32f1xx_hal_uart.h"
 
+#include "main.h"
 #include "flags.h"
 
 
 /*解析来自蓝牙的命令*/
 void cmd_handler(Usart * from)
 {
-    int len = Usart_Get_RxSize(from);
-    uint8_t * cmd = Usart_pReceiveData(from);
+    uint8_t len = Usart_Get_RxSize(from);
+    uint8_t * cmd = Usart_GetpReceiveData(from);
 
     if (len < 4) return;
     if (cmd[0] != FRAME_HEADER_1 || cmd[1] != FRAME_HEADER_2) return;
@@ -38,29 +29,25 @@ void cmd_handler(Usart * from)
 
     // 校验范围：cmd[2] 开始的n字节
     uint8_t checksum = 0;
-    for (int i = 0; i < n; i++) checksum ^= cmd[2 + i];
+    for (uint8_t i = 0; i < n; i++) checksum ^= cmd[2 + i];
     if (checksum != cmd[2 + n]) return;
 
     // 检验通过
-    if (n == 5) {
-        uint16_t cmd_type = (cmd[3] << 8) + cmd[4];
-        uint16_t para = (cmd[5] << 8) + cmd[6];
-        queue_btRxCommand_put(&cmd_type);
-        queue_btRxCommand_put(&para);
-    }
-    else if (n == 7) {
-        uint16_t cmd_type = (cmd[3] << 8) + cmd[4];
-        uint16_t para1 = (cmd[5] << 8) + cmd[6];
+    uint16_t cmd_type = (cmd[3] << 8) + cmd[4];
+    uint16_t para1 = (cmd[5] << 8) + cmd[6];
+    queue_btRxCommand_put(&cmd_type);
+    queue_btRxCommand_put(&para1);
+    if (n == 7) {
         uint16_t para2 = (cmd[7] << 8) + cmd[8];
-        queue_btRxCommand_put(&cmd_type);
-        queue_btRxCommand_put(&para1);
         queue_btRxCommand_put(&para2);
     }
+    static uint16_t end_flag = DEFAULT_CMD_CODE; // DEFAULT_CMD_CODE表示一个命令的结束
+    queue_btRxCommand_put(&end_flag);
 }
 
 
 /*执行来自蓝牙的单参数命令（需要先解析）*/
-void command_handler_1para(uint16_t cmd_type, uint16_t para)
+void cmd_executor_1para(uint16_t cmd_type, uint16_t para)
 {
     if (cmd_type == 0)      // 设置机器是否暂停
     {
@@ -114,7 +101,7 @@ void command_handler_1para(uint16_t cmd_type, uint16_t para)
 
 
 /*执行来自蓝牙的双参数命令（需要先解析）*/
-void command_handler_2para(uint16_t cmd_type, uint16_t para1, uint16_t para2)
+void cmd_executor_2para(uint16_t cmd_type, uint16_t para1, uint16_t para2)
 {
     if (cmd_type == 2)      // 设置 compare_step。将para一比一转换
     {

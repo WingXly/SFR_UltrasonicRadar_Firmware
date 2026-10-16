@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 
 struct Usart {
@@ -30,9 +31,9 @@ struct Usart {
     DMA_HandleTypeDef * DMA_handle_rx;
     DMA_HandleTypeDef * DMA_handle_tx;
     uint8_t receive_data[20];
-    int TX_CPLT;
-    int RX_CPLT;
-    int rx_size;
+    bool TX_CPLT;
+    bool RX_CPLT;
+    uint16_t rx_size;
 };
 
 
@@ -47,8 +48,8 @@ Usart * Usart_Instantiate(  UART_HandleTypeDef * huart,
     this -> DMA_handle_rx = DMA_handle_rx;
     this -> DMA_handle_tx = DMA_handle_tx;
     memset(&this->receive_data, 0, sizeof(this->receive_data));
-    this -> TX_CPLT = 1;
-    this -> RX_CPLT = 0;
+    this -> TX_CPLT = true;
+    this -> RX_CPLT = false;
     this -> rx_size = 0;
     return this;
 }
@@ -56,131 +57,142 @@ Usart * Usart_Instantiate(  UART_HandleTypeDef * huart,
 void Usart_Free(Usart * this) { free(this); }
 
 
+void Usart_Enable_IO(Usart * this)
+{
+    Usart_mark_RxCplt(this, 1);
+    Usart_mark_TxCplt(this, 1);
+}
+
+
 /*返回Usart的ReceiveData地址*/
-uint8_t * Usart_pReceiveData(Usart * this)
+uint8_t * Usart_GetpReceiveData(Usart * this)
 {
     return this->receive_data;
 }
 
 
 /*返回Usart的huart地址*/
-UART_HandleTypeDef * Usart_pHuart(Usart * this)
+UART_HandleTypeDef * Usart_GetpHuart(Usart * this)
 {
     return this->huart;
 }
 
 
 /*检测Usart是否接收完成*/
-int Usart_is_RxCplt(Usart * this)
+bool Usart_is_RxCplt(Usart * this)
 {
     return this->RX_CPLT;
 }
 
 
 /*检测Usart是否发送完成*/
-int Usart_is_TxCplt(Usart * this)
+bool Usart_is_TxCplt(Usart * this)
 {
     return this->TX_CPLT;
 }
 
 
 /*将Usart标记为接收完成或未完成*/
-void Usart_mark_RxCplt(Usart * this, int Cplt)
+void Usart_mark_RxCplt(Usart * this, bool is_it_cplt)
 {
-    if (Cplt == 0) {
-        this->RX_CPLT = 0;
+    if (is_it_cplt == false) {
+        this->RX_CPLT = false;
     } else {
-        this->RX_CPLT = 1;
+        this->RX_CPLT = true;
     }
 }
 
 
 /*读取Usart接收到数据的长度（需要先标记）*/
-int Usart_Get_RxSize(Usart * this)
+uint16_t Usart_Get_RxSize(Usart * this)
 {
     return this->rx_size;
 }
 
 
 /*标记Usart接收到数据的长度*/
-void Usart_mark_RxSize(Usart * this, int size)
+void Usart_mark_RxSize(Usart * this, uint16_t size)
 {
     this -> rx_size = size;
 }
 
 
 /*将Usart标记为发送完成或未完成*/
-void Usart_mark_TxCplt(Usart * this, int Cplt)
+void Usart_mark_TxCplt(Usart * this, bool is_it_cplt)
 {
-    if (Cplt == 0) {
-        this->TX_CPLT = 0;
+    if (is_it_cplt == false) {
+        this->TX_CPLT = false;
     } else {
-        this->TX_CPLT = 1;
+        this->TX_CPLT = true;
     }
 }
 
 
 /*让Usart等待接收数据（异步传输，使用DMA，禁用传输过半中断）*/
-void Usart_ReceiveToIdle_DMA_noHT(Usart * this)
+HAL_StatusTypeDef Usart_ReceiveToIdle_DMA_noHT(Usart * this)
 {
     this->RX_CPLT = 0;
-    HAL_UARTEx_ReceiveToIdle_DMA(
-          Usart_pHuart(this),
-          Usart_pReceiveData(this),
+    HAL_StatusTypeDef status = HAL_UARTEx_ReceiveToIdle_DMA(
+          Usart_GetpHuart(this),
+          Usart_GetpReceiveData(this),
           20
         );
     __HAL_DMA_DISABLE_IT(this->DMA_handle_rx, DMA_IT_HT);
+    return status;
 }
 
 
 /*让Usart等待接收数据（异步传输，使用DMA，启用传输过半中断）*/
-void Usart_ReceiveToIdle_DMA_HT(Usart * this)
+HAL_StatusTypeDef Usart_ReceiveToIdle_DMA_HT(Usart * this)
 {
     this->RX_CPLT = 0;
-    HAL_UARTEx_ReceiveToIdle_DMA(
-          Usart_pHuart(this),
-          Usart_pReceiveData(this),
+    HAL_StatusTypeDef status = HAL_UARTEx_ReceiveToIdle_DMA(
+          Usart_GetpHuart(this),
+          Usart_GetpReceiveData(this),
           20
         );
     __HAL_DMA_ENABLE_IT(this->DMA_handle_rx, DMA_IT_HT);
+    return status;
 }
 
 
 /*让Usart发送一段数据（异步传输，使用DMA，禁用传输过半中断）*/
-void Usart_Transmit_DMA_noHT(Usart * this, uint8_t * pSendData_static, int size)
+HAL_StatusTypeDef Usart_Transmit_DMA_noHT(Usart * this, uint8_t * pSendData_static, int size)
 {
     this->TX_CPLT = 0;
-    HAL_UART_Transmit_DMA(this->huart, pSendData_static, size);
+    HAL_StatusTypeDef status = HAL_UART_Transmit_DMA(this->huart, pSendData_static, size);
     __HAL_DMA_DISABLE_IT(this->DMA_handle_tx, DMA_IT_HT);
+    return status;
 }
 
 
 /*让Usart发送一段数据（异步传输，使用DMA，启用传输过半中断）*/
-void Usart_Transmit_DMA_HT(Usart * this, uint8_t * pSendData_static, int size)
+HAL_StatusTypeDef Usart_Transmit_DMA_HT(Usart * this, uint8_t * pSendData_static, int size)
 {
     this->TX_CPLT = 0;
-    HAL_UART_Transmit_DMA(this->huart, pSendData_static, size);
+    HAL_StatusTypeDef status = HAL_UART_Transmit_DMA(this->huart, pSendData_static, size);
     __HAL_DMA_ENABLE_IT(this->DMA_handle_tx, DMA_IT_HT);
+    return status;
 }
 
 
 /*让Usart等待接收数据（异步传输，启用传输完成中断）*/
-void Usart_ReceiveToIdle_IT(Usart * this)
+HAL_StatusTypeDef Usart_ReceiveToIdle_IT(Usart * this)
 {
     this->RX_CPLT = 0;
-    HAL_UARTEx_ReceiveToIdle_IT(
-          Usart_pHuart(this),
-          Usart_pReceiveData(this),
+    return HAL_UARTEx_ReceiveToIdle_IT(
+          Usart_GetpHuart(this),
+          Usart_GetpReceiveData(this),
           20
         );
 }
 
 
 /*让Usart发送一段数据（异步传输，启用传输完成中断）*/
-void Usart_Transmit_IT(Usart * this, uint8_t * pSendData_static, int size)
+HAL_StatusTypeDef Usart_Transmit_IT(Usart * this, uint8_t * pSendData_static, int size)
 {
     this->TX_CPLT = 0;
-    HAL_UART_Transmit_IT(this->huart, pSendData_static, size);
+    return HAL_UART_Transmit_IT(this->huart, pSendData_static, size);
 }
 
 
