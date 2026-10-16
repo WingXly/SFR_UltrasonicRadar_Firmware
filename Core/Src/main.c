@@ -181,6 +181,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
     // 倒计时结束则唤醒Task_Main
     if (OrdinaryTimer_is_CountCplt(main_cycle_timer)) {
+      OrdinaryTimer_Reset(main_cycle_timer);
       main_cycle_done_awake();
     }
   } 

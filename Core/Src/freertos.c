@@ -407,15 +407,16 @@ StateFunction_TypeDef State_Init(void)
 StateFunction_TypeDef State_Pause_append(void)
 {
   // 指令处理
-  uint8_t cmd_type = 0;
-  uint8_t para1 = 0;
-  osMessageQueueGet(queue_btRxCommand_Handle, &cmd_type, 0, 0);
-  osMessageQueueGet(queue_btRxCommand_Handle, &para1, 0, 0);
-          
-  if (osMessageQueueGetCount(queue_btRxCommand_Handle) == 0) {
+  static uint8_t cmd_type = 0;
+  static uint8_t para1 = 0;
+  static uint8_t para2 = 0;
+  if (osMessageQueueGetCount(queue_btRxCommand_Handle) == 2) {
+    osMessageQueueGet(queue_btRxCommand_Handle, &cmd_type, 0, 0);
+    osMessageQueueGet(queue_btRxCommand_Handle, &para1, 0, 0);
     command_handler_1para(cmd_type, para1);
-  } else {
-    uint8_t para2 = 0;
+  } else if (osMessageQueueGetCount(queue_btRxCommand_Handle) == 3) {
+    osMessageQueueGet(queue_btRxCommand_Handle, &cmd_type, 0, 0);
+    osMessageQueueGet(queue_btRxCommand_Handle, &para1, 0, 0);
     osMessageQueueGet(queue_btRxCommand_Handle, &para2, 0, 0);
     command_handler_2para(cmd_type, para1, para2);
   }

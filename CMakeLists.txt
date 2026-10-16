@@ -61,6 +61,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Inc/usart_ep.h
     Core/Inc/flags.h
     Core/Src/flags.c
+    Core/Inc/state_t.h
+    Core/Src/state_t.c
     # Add user sources here
 )
 

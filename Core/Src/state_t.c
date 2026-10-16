@@ -1,4 +1,14 @@
 #include "state_t.h"
+
+const StateMachine_TypeDef state_machine[STATE_NUM] = {
+    [0] = State_Init,
+    [1] = State_Pause_append,
+    [2] = State_Measuring,
+    [3] = State_Processing,
+    [4] = State_Rotating,
+    [5] = State_Cooling
+};
+
 #include <stdlib.h>
 
 
