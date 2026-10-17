@@ -18,7 +18,6 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "FreeRTOS.h"
 #include "cmsis_os.h"
 #include "dma.h"
 #include "i2c.h"
@@ -202,9 +201,9 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 /*串口Tx回调函数*/
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
-  // 只对传输完成进行标注，不唤醒蓝牙任务
-  if (huart == Usart_GetpHuart(bluetooth)) {
-      Usart_mark_TxCplt(bluetooth, 1);
+  if (huart == Usart_Get_pHuart(bluetooth)) {
+      Usart_mark_TxCplt(bluetooth, true);
+      awake_bt_task();
   }
 }
 
@@ -212,8 +211,8 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 /*串口Rx回调函数*/
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
-  if (huart == Usart_GetpHuart(bluetooth)) {
-    Usart_mark_RxCplt(bluetooth, 1);
+  if (huart == Usart_Get_pHuart(bluetooth)) {
+    Usart_mark_RxCplt(bluetooth, true);
     Usart_mark_RxSize(bluetooth, Size);
     awake_bt_task();
   }

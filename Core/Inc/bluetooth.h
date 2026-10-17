@@ -10,9 +10,9 @@
 #define FRAME_END      0x0D
 
 /*错误码*/
-#define ERR_INVALID_PARAM 0x00
-#define ERR_ARG_COUNT 0x01
-#define ERR_UNKNOWN_CMD 0x02
+#define CMD_ERR_INVALID_PARAM 0x00
+#define CMD_ERR_ARG_COUNT 0x01
+#define CMD_ERR_UNKNOWN_CMD 0x02
 
 // 最大参数个数
 #define CMD_ARG_MAX 2
@@ -35,7 +35,7 @@ typedef struct {
     uint16_t argv[CMD_ARG_MAX]; // 参数列表
 } CommandCode_TypeDef;
 
-CommandCode_TypeDef * Cmd_Parse(Usart * from);
+CommandCode_TypeDef * Cmd_Parse(uint8_t * pReceiveData, uint8_t rx_size);
 bool Cmd_Execute(const CommandCode_TypeDef * cmd);
 
 static bool __Cmd_PauseOrStart__(const CommandCode_TypeDef * cmd);

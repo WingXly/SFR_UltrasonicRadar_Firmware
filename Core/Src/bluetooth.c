@@ -66,7 +66,7 @@ void send_error(Usart * who_send_data, uint16_t error_code)
 
 
 /*解析来自蓝牙的命令*/
-CommandCode_TypeDef * Cmd_Parse(Usart * from)
+CommandCode_TypeDef * Cmd_Parse(uint8_t * pReceiveData, uint8_t rx_size)
 {
     // 初始化返回值
     static CommandCode_TypeDef cmd = {
@@ -79,34 +79,34 @@ CommandCode_TypeDef * Cmd_Parse(Usart * from)
     }
 
     // 检验数据
-    uint8_t len_real = Usart_Get_RxSize(from);
-    uint8_t * receive_data = Usart_GetpReceiveData(from);
-    uint8_t len_tv = receive_data[2];
-    uint8_t len_tv_total = len_tv + 4; // 帧总长度理论值 = 2帧头 + len_tv + 1校验 + 1帧尾
+    uint8_t len = pReceiveData[2];
+    uint8_t len_total = len + 4; // 帧总长度理论值 = 2帧头 + len_tv + 1校验 + 1帧尾
     uint8_t xor = 0;
 
-    // 校验范围：从 receive_data[2] 开始的 receive_data[2] 字节
-    for (uint8_t i = 2; i < len_tv + 2; i++) {
-        xor ^= receive_data[i];
+    // xor校验和：从 pReceiveData[2] 开始的 pReceiveData[2] 字节
+    for (uint8_t i = 2; i < len + 2; i++) {
+        xor ^= pReceiveData[i];
     }
 
     // 检验
-    if (len_real >= 4                             &&
-        len_real == len_tv_total                  &&
-        receive_data[0] == FRAME_HEADER_1         &&
-        receive_data[1] == FRAME_HEADER_2         &&
-        xor == receive_data[2 + len_tv]           &&
-        receive_data[len_tv_total - 1] == FRAME_END)
+    if (rx_size >= 4                           &&
+        rx_size == len_total                   &&
+        pReceiveData[0] == FRAME_HEADER_1      &&
+        pReceiveData[1] == FRAME_HEADER_2      &&
+        xor == pReceiveData[2 + len]           &&
+        pReceiveData[len_total - 1] == FRAME_END)
     {
         // 检验通过
-        cmd.type = (receive_data[3] << 8) + receive_data[4];
+        cmd.type = (pReceiveData[3] << 8) + pReceiveData[4];
 
-        uint8_t loop = 0;
-        while(len_tv >= 5 && loop < CMD_ARG_MAX) {
-            cmd.argv[loop] = (receive_data[2 * loop + 5] << 8) + receive_data[2 * loop + 6];
+        // 逐个提取参数
+        for(uint8_t loop = 0;
+            len > 4 && loop < CMD_ARG_MAX;
+            loop++)
+        {
+            cmd.argv[loop] = (pReceiveData[2 * loop + 5] << 8) + pReceiveData[2 * loop + 6];
             cmd.argc += 1;
-            len_tv -= 2;
-            loop += 1;
+            len -= 2;
         }
     }
 
@@ -133,11 +133,6 @@ commands_map[] =
 };
 
 
-/*
- * 对比CommandCode和commands_map[]。
- * 如果找到了匹配的cmd_type且argc匹配，就执行它
- * 如果没找到命令或者argc不匹配，返回false
- */
 bool Cmd_Execute(const CommandCode_TypeDef * cmd)
 {
     for (uint16_t i = 0; i < CMD_MAP_SIZE; i++) {
@@ -145,7 +140,7 @@ bool Cmd_Execute(const CommandCode_TypeDef * cmd)
         {
             //  检查参数个数
             if (commands_map[i].argc != cmd->argc) {
-                put_queue_btSendError_awake(ERR_ARG_COUNT);
+                put_queue_btSendError_awake(CMD_ERR_ARG_COUNT);
                 return false;
             }
 
@@ -155,7 +150,7 @@ bool Cmd_Execute(const CommandCode_TypeDef * cmd)
     }
 
     // 未知命令
-    put_queue_btSendError_awake(ERR_UNKNOWN_CMD);
+    put_queue_btSendError_awake(CMD_ERR_UNKNOWN_CMD);
     return false;    
 }
 
@@ -171,7 +166,7 @@ static bool __Cmd_PauseOrStart__(const CommandCode_TypeDef * cmd)
         LED_off(led_green);
         LED_on(led_red);
     } else {
-        put_queue_btSendError_awake(ERR_INVALID_PARAM);
+        put_queue_btSendError_awake(CMD_ERR_INVALID_PARAM);
         return false;
     }
     return true;
@@ -189,7 +184,7 @@ static bool __Cmd_Oled_OnOff__(const CommandCode_TypeDef * cmd)
         oled_refresh_req = true;
         LED_on(led_blue);
     } else {
-        put_queue_btSendError_awake(ERR_INVALID_PARAM);
+        put_queue_btSendError_awake(CMD_ERR_INVALID_PARAM);
         return false;
     }
     return true;
@@ -214,13 +209,13 @@ static bool __Cmd_CoolingTime__(const CommandCode_TypeDef * cmd)
     } else if (cmd->argv[0] == 3) {
         cooling_time_ms -= (float)cmd->argv[1] / 1000;
     } else {
-        put_queue_btSendError_awake(ERR_INVALID_PARAM);
+        put_queue_btSendError_awake(CMD_ERR_INVALID_PARAM);
         return false;
     }
 
     if (cooling_time_ms < 0.001f) {
         cooling_time_ms = cooling_time_old;
-        put_queue_btSendError_awake(ERR_INVALID_PARAM);
+        put_queue_btSendError_awake(CMD_ERR_INVALID_PARAM);
         return false;
     }
     return true;

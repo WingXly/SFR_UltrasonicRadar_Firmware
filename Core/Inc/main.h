@@ -78,7 +78,6 @@ extern void put_queue_btSendError_awake(uint16_t error_code);
 extern void awake_oled_update(bool oled_is_enable);
 extern void main_cycle_done_awake();
 extern void capture_done_awake();
-extern void queue_btRxCommand_put(uint16_t * p);
 
 /* USER CODE END EFP */
 

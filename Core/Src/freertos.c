@@ -19,9 +19,8 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
-#include "bluetooth.h"
-#include "cmsis_os2.h"
 #include "task.h"
+#include "main.h"
 #include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -29,6 +28,7 @@
 #include "state_t.h"
 #include "main.h"
 #include "flags.h"
+#include "usart_ep.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -150,17 +150,6 @@ void capture_done_awake()
 {
   osSemaphoreRelease(binSignal_CaptureDone_Handle);
 }
-
-
-void queue_btRxCommand_put(uint16_t * p)
-{
-  osMessageQueuePut(queue_btRxCommand_Handle, p, 0, 0);
-}
-
-
-
-
-
 
 
 /* USER CODE END FunctionPrototypes */
@@ -312,7 +301,10 @@ void StartTask_BluetoothIO(void *argument)
     if (Usart_is_RxCplt(bluetooth))
     {
       // 接收指令
-      rx_cmd = Cmd_Parse(bluetooth);
+      rx_cmd = Cmd_Parse(
+        Usart_Get_pReceiveData(bluetooth),
+        Usart_Get_RxSize(bluetooth)
+      );
       osMessageQueuePut(queue_btRxCommand_Handle, &rx_cmd, 0, 0);
 
       // 等待下一个命令
@@ -356,8 +348,6 @@ void StartTask_BluetoothIO(void *argument)
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 
-/* USER CODE END Application */
-
 
 State_TypeDef State_Init(void)
 {
@@ -371,16 +361,23 @@ State_TypeDef State_Init(void)
   pause = true;
 
   // 启动时不启用OLED输出
-  oled_refresh_req = 0;
+  enable_oled = 0;
   LED_off(led_blue);
 
   // 启动时将舵机置于0度
   PwmTimer_SetCompare(servo_pwm_timer, PWMSERVO_MIN_COMPARE);
 
   // 启用蓝牙发送和接收
-  Usart_Enable_IO(bluetooth);
-  Usart_ReceiveToIdle_DMA_noHT(bluetooth);
-
+  if (Usart_is_RxCplt(bluetooth)) {
+    Usart_ReceiveToIdle_DMA_noHT(bluetooth);
+  } else {
+    OLED_NewFrame();
+    OLED_PrintString(0, 0, "Restart", &font16x16, OLED_COLOR_NORMAL);
+    OLED_ShowFrame();
+    osDelay(100);
+    return INIT;
+  }
+  
   osDelay(100);
   return PAUSE_APPEND;
 }
@@ -460,3 +457,6 @@ State_TypeDef State_Cooling(void)
   // 倒计时完毕
   return PAUSE_APPEND;
 }
+
+
+/* USER CODE END Application */
