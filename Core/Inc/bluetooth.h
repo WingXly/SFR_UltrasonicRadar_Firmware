@@ -35,11 +35,6 @@ typedef struct {
     uint16_t argv[CMD_ARG_MAX]; // 参数列表
 } CommandCode_TypeDef;
 
-typedef bool (*CommandHandler_TypeDef)(const CommandCode_TypeDef * cmd);
-
-
-
-
 CommandCode_TypeDef * Cmd_Parse(Usart * from);
 bool Cmd_Execute(const CommandCode_TypeDef * cmd);
 

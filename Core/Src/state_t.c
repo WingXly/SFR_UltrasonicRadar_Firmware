@@ -1,16 +1,21 @@
 #include "state_t.h"
-#include "stdlib.h"
 #include <stdint.h>
+#include <sys/_types.h>
+#include <stdlib.h>
+#include <stdbool.h>
 
 
 #define STATE_MAP_SIZE (sizeof(states_map) / sizeof(states_map[0]))
 
 
 /*状态机*/
-static const struct {
+static const struct
+{
   State_TypeDef state;
-  StateHandler_TypeDef handler;
-} states_map[] = {
+  State_TypeDef (*handler)(void);
+}
+states_map[] =
+{
     ///={       state          ,         handler          },
     {INIT                  , State_Init               },
     {PAUSE_APPEND          , State_Pause_append       },
@@ -24,14 +29,9 @@ static const struct {
 State_TypeDef StateMachine_Next(State_TypeDef this_state)
 {
     for (uint8_t i = 0; i < STATE_MAP_SIZE; i++) {
-        if (states_map[i].state == this_state)
+        if (states_map[i].state == this_state && states_map[i].handler != NULL)
         {
-            StateHandler_TypeDef handler = states_map[i].handler;
-            State_TypeDef next_state = handler();
-
-            if (next_state) {
-                return next_state;
-            }
+            return states_map[i].handler();
         }
     }
 

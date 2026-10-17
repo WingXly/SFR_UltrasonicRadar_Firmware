@@ -21,12 +21,12 @@
 #include "FreeRTOS.h"
 #include "bluetooth.h"
 #include "cmsis_os2.h"
-#include "state_t.h"
 #include "task.h"
 #include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "state_t.h"
 #include "main.h"
 #include "flags.h"
 /* USER CODE END Includes */

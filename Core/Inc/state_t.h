@@ -1,8 +1,7 @@
 #ifndef __STATE_T_H
 #define __STATE_T_H
 
-#include <stdint.h>
-
+#include "main.h"
 
 /*状态表*/
 typedef enum {
@@ -11,9 +10,8 @@ typedef enum {
   MEASURING    = 2, // 超声波测距仪正在测距
   PROCESSING   = 3, // 计算距离与处理OLED显示
   ROTATING     = 4, // 发布舵机旋转指令
-  COOLING      = 5  // 冷却
+  COOLING      = 5, // 冷却
 } State_TypeDef;
-typedef State_TypeDef (*StateHandler_TypeDef)(void);
 
 
 /*定义在 freeetos.c*/

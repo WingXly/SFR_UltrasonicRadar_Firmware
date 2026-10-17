@@ -116,11 +116,14 @@ CommandCode_TypeDef * Cmd_Parse(Usart * from)
 
 
 /*指令链表*/
-static const struct {
+static const struct
+{
     uint16_t cmd_type;
     uint16_t  argc;
-    CommandHandler_TypeDef handler;
-} commands_map[] = {
+    bool (*handler)(const CommandCode_TypeDef * cmd);
+}
+commands_map[] =
+{
     ///={       cmd_type           argc              handler            },
     { CMD_PAUSE_OR_START       , 1,      __Cmd_PauseOrStart__       },
     { CMD_OLED                 , 1,      __Cmd_Oled_OnOff__         },
@@ -138,7 +141,7 @@ static const struct {
 bool Cmd_Execute(const CommandCode_TypeDef * cmd)
 {
     for (uint16_t i = 0; i < CMD_MAP_SIZE; i++) {
-        if (commands_map[i].cmd_type == cmd->type)
+        if (commands_map[i].cmd_type == cmd->type && commands_map[i].handler != NULL)
         {
             //  检查参数个数
             if (commands_map[i].argc != cmd->argc) {
@@ -146,7 +149,7 @@ bool Cmd_Execute(const CommandCode_TypeDef * cmd)
                 return false;
             }
 
-            // 已找到命令，且参数个数正确
+            // 参数个数正确
             return commands_map[i].handler(cmd);
         }
     }
