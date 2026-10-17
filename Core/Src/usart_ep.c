@@ -49,7 +49,7 @@ Usart * Usart_Instantiate(  UART_HandleTypeDef * huart,
     this -> DMA_handle_tx = DMA_handle_tx;
     memset(&this->receive_data, 0, sizeof(this->receive_data));
     this -> TX_CPLT = true;
-    this -> RX_CPLT = false;
+    this -> RX_CPLT = true;
     this -> rx_size = 0;
     return this;
 }
@@ -57,22 +57,15 @@ Usart * Usart_Instantiate(  UART_HandleTypeDef * huart,
 void Usart_Free(Usart * this) { free(this); }
 
 
-void Usart_Enable_IO(Usart * this)
-{
-    Usart_mark_RxCplt(this, 1);
-    Usart_mark_TxCplt(this, 1);
-}
-
-
 /*返回Usart的ReceiveData地址*/
-uint8_t * Usart_GetpReceiveData(Usart * this)
+uint8_t * Usart_Get_pReceiveData(Usart * this)
 {
     return this->receive_data;
 }
 
 
 /*返回Usart的huart地址*/
-UART_HandleTypeDef * Usart_GetpHuart(Usart * this)
+UART_HandleTypeDef * Usart_Get_pHuart(Usart * this)
 {
     return this->huart;
 }
@@ -103,10 +96,11 @@ void Usart_mark_RxCplt(Usart * this, bool is_it_cplt)
 }
 
 
-/*读取Usart接收到数据的长度（需要先标记）*/
-uint16_t Usart_Get_RxSize(Usart * this)
+/*将Usart标记为接收完成，并且记录下尺寸*/
+void Usart_mark_RxCplt_withSize(Usart * this, uint16_t size)
 {
-    return this->rx_size;
+    this -> RX_CPLT = true;
+    this -> rx_size = size;
 }
 
 
@@ -114,6 +108,13 @@ uint16_t Usart_Get_RxSize(Usart * this)
 void Usart_mark_RxSize(Usart * this, uint16_t size)
 {
     this -> rx_size = size;
+}
+
+
+/*读取Usart接收到数据的长度（需要先标记）*/
+uint16_t Usart_Get_RxSize(Usart * this)
+{
+    return this->rx_size;
 }
 
 
@@ -133,8 +134,8 @@ HAL_StatusTypeDef Usart_ReceiveToIdle_DMA_noHT(Usart * this)
 {
     this->RX_CPLT = 0;
     HAL_StatusTypeDef status = HAL_UARTEx_ReceiveToIdle_DMA(
-          Usart_GetpHuart(this),
-          Usart_GetpReceiveData(this),
+          Usart_Get_pHuart(this),
+          Usart_Get_pReceiveData(this),
           20
         );
     __HAL_DMA_DISABLE_IT(this->DMA_handle_rx, DMA_IT_HT);
@@ -147,8 +148,8 @@ HAL_StatusTypeDef Usart_ReceiveToIdle_DMA_HT(Usart * this)
 {
     this->RX_CPLT = 0;
     HAL_StatusTypeDef status = HAL_UARTEx_ReceiveToIdle_DMA(
-          Usart_GetpHuart(this),
-          Usart_GetpReceiveData(this),
+          Usart_Get_pHuart(this),
+          Usart_Get_pReceiveData(this),
           20
         );
     __HAL_DMA_ENABLE_IT(this->DMA_handle_rx, DMA_IT_HT);
@@ -181,8 +182,8 @@ HAL_StatusTypeDef Usart_ReceiveToIdle_IT(Usart * this)
 {
     this->RX_CPLT = 0;
     return HAL_UARTEx_ReceiveToIdle_IT(
-          Usart_GetpHuart(this),
-          Usart_GetpReceiveData(this),
+          Usart_Get_pHuart(this),
+          Usart_Get_pReceiveData(this),
           20
         );
 }
