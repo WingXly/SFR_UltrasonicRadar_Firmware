@@ -21,6 +21,7 @@
 #include "FreeRTOS.h"
 #include "bluetooth.h"
 #include "cmsis_os2.h"
+#include "state_t.h"
 #include "task.h"
 #include "cmsis_os.h"
 
@@ -210,7 +211,7 @@ void MX_FREERTOS_Init(void) {
   queue_btSendData_Handle = osMessageQueueNew (8, sizeof(float), &queue_btSendData__attributes);
 
   /* creation of queue_btRxCommand_ */
-  queue_btRxCommand_Handle = osMessageQueueNew (16, sizeof(uint16_t), &queue_btRxCommand__attributes);
+  queue_btRxCommand_Handle = osMessageQueueNew (16, sizeof(CommandCode_TypeDef*), &queue_btRxCommand__attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -246,17 +247,11 @@ void MX_FREERTOS_Init(void) {
 void StartTask_Main(void *argument)
 {
   /* USER CODE BEGIN StartTask_Main */
-  States_TypeDef next_state = INIT;
+  State_TypeDef state = INIT;
   /* Infinite loop */
   for(;;)
   {
-    StateMachine_TypeDef state_function = state_machine[next_state]; // 状态机递进
-    if (state_function != NULL) {
-      next_state = state_function();  // 状态机执行
-    } else {
-      osDelay(1000);
-      next_state = INIT; // 异常时回到初始化
-    }
+    state = StateMachine_Next(state);
   }
 
   /* USER CODE END StartTask_Main */
@@ -306,6 +301,7 @@ void StartTask_OledUpdate(void *argument)
 void StartTask_BluetoothIO(void *argument)
 {
   /* USER CODE BEGIN StartTask_BluetoothIO */
+  static CommandCode_TypeDef * rx_cmd = NULL;
   /* Infinite loop */
   for(;;)
   {
@@ -315,11 +311,11 @@ void StartTask_BluetoothIO(void *argument)
     // event: 蓝牙接收完毕
     if (Usart_is_RxCplt(bluetooth))
     {
-      // 接收指令，然后执行
-      cmd_handler(bluetooth);
+      // 接收指令
+      rx_cmd = Cmd_Parse(bluetooth);
+      osMessageQueuePut(queue_btRxCommand_Handle, &rx_cmd, 0, 0);
 
       // 等待下一个命令
-      Usart_mark_RxCplt(bluetooth, 0);
       Usart_ReceiveToIdle_DMA_noHT(bluetooth);
     }
 
@@ -363,7 +359,7 @@ void StartTask_BluetoothIO(void *argument)
 /* USER CODE END Application */
 
 
-StateFunction_TypeDef State_Init(void)
+State_TypeDef State_Init(void)
 {
   // 阻止HC-SR04在INIT状态下工作
   CaptureTimer_Reset(capture_timer);
@@ -390,31 +386,13 @@ StateFunction_TypeDef State_Init(void)
 }
 
 
-StateFunction_TypeDef State_Pause_append(void)
+State_TypeDef State_Pause_append(void)
 {
   // 从队列中获取命令，然后执行它们
-  uint16_t temp = DEFAULT_CMD_CODE;
-  uint16_t ctype = DEFAULT_CMD_CODE;
-  uint16_t para1 = DEFAULT_CMD_CODE;
-  uint16_t para2 = DEFAULT_CMD_CODE;
+  static CommandCode_TypeDef * cmd = NULL;
   while (osMessageQueueGetCount(queue_btRxCommand_Handle) > 0) {
-    osMessageQueueGet(queue_btRxCommand_Handle, &temp, 0, 0);
-
-    if (temp == DEFAULT_CMD_CODE) {
-      if (ctype != DEFAULT_CMD_CODE && para1 != DEFAULT_CMD_CODE && para2 == DEFAULT_CMD_CODE) {
-        cmd_executor_1para(ctype, para1);
-      } else if (ctype != DEFAULT_CMD_CODE && para1 != DEFAULT_CMD_CODE && para2 != DEFAULT_CMD_CODE) {
-        cmd_executor_2para(ctype, para1, para2);
-      }
-      ctype = DEFAULT_CMD_CODE;
-      para1 = DEFAULT_CMD_CODE;
-      para2 = DEFAULT_CMD_CODE;
-      continue;
-    }
-
-    else if (ctype == DEFAULT_CMD_CODE) ctype = temp;
-    else if (para1 == DEFAULT_CMD_CODE) para1 = temp;
-    else if (para2 == DEFAULT_CMD_CODE) para2 = temp;
+    osMessageQueueGet(queue_btRxCommand_Handle, &cmd, 0, 0);
+    Cmd_Execute(cmd);
   }
   // 按按钮（KEY1）暂停或解除暂停的事件放在main.c的HAL_GPIO_EXTI_Callback()里
   // 如果不处于暂停，则进行下一步
@@ -423,7 +401,7 @@ StateFunction_TypeDef State_Pause_append(void)
 }
 
 
-StateFunction_TypeDef State_Measuring(void)
+State_TypeDef State_Measuring(void)
 {
   // 刚进入此状态，上拉Trig
   CaptureTimer_Reset(capture_timer);
@@ -442,7 +420,7 @@ StateFunction_TypeDef State_Measuring(void)
 }
 
 
-StateFunction_TypeDef State_Processing(void)
+State_TypeDef State_Processing(void)
 {
   // 计算传感器数据
   distance = calc_distance_mm(CaptureTimer_LoadCounter_1(capture_timer),
@@ -455,7 +433,7 @@ StateFunction_TypeDef State_Processing(void)
 }
 
 
-StateFunction_TypeDef State_Rotating(void)
+State_TypeDef State_Rotating(void)
 {
   if (resample_remain) {
     resample_remain --;
@@ -469,7 +447,7 @@ StateFunction_TypeDef State_Rotating(void)
 }
 
 
-StateFunction_TypeDef State_Cooling(void)
+State_TypeDef State_Cooling(void)
 {
   // 刚进入COOLING，刷新oled，发送传感器数据
   if(enable_oled) awake_oled_update(true);

@@ -1,24 +1,39 @@
 #include "state_t.h"
 #include "stdlib.h"
+#include <stdint.h>
 
-const StateMachine_TypeDef state_machine[STATE_NUM] = {
-    [0] = State_Init,
-    [1] = State_Pause_append,
-    [2] = State_Measuring,
-    [3] = State_Processing,
-    [4] = State_Rotating,
-    [5] = State_Cooling
+
+#define STATE_MAP_SIZE (sizeof(states_map) / sizeof(states_map[0]))
+
+
+/*状态机*/
+static const struct {
+  State_TypeDef state;
+  StateHandler_TypeDef handler;
+} states_map[] = {
+    ///={       state          ,         handler          },
+    {INIT                  , State_Init               },
+    {PAUSE_APPEND          , State_Pause_append       },
+    {MEASURING             , State_Measuring          },
+    {PROCESSING            , State_Processing         },
+    {ROTATING              , State_Rotating           },
+    {COOLING               , State_Cooling            },
 };
 
 
-void StateMachine_Run__dont_use_this(void) {
-    static StateFunction_TypeDef next_state = INIT;
-    for(;;) {
-        StateMachine_TypeDef handler = state_machine[next_state];
-        if (handler != NULL) {
-            next_state = handler();  // 每个函数返回下一个状态
-        } else {
-            next_state = INIT;
+State_TypeDef StateMachine_Next(State_TypeDef this_state)
+{
+    for (uint8_t i = 0; i < STATE_MAP_SIZE; i++) {
+        if (states_map[i].state == this_state)
+        {
+            StateHandler_TypeDef handler = states_map[i].handler;
+            State_TypeDef next_state = handler();
+
+            if (next_state) {
+                return next_state;
+            }
         }
     }
+
+    return INIT;
 }

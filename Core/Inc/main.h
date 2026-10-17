@@ -66,20 +66,19 @@ void print_sensor_data_on_oled(float distance, float angle);
       typedef struct AutoCompare_TypeDef AutoCompare_TypeDef;
 
       int AutoCompare_next(AutoCompare_TypeDef * this);
-      void AutoCompare_setStep( AutoCompare_TypeDef * this,
+      bool AutoCompare_setStep( AutoCompare_TypeDef * this,
                                 int operation_type, int value );
 // }
 extern AutoCompare_TypeDef * auto_compare;
 
-/*from freertos.c*/
-
-void awake_bt_task();
-void put_queue_btSendData(float data1, float data2);
-void put_queue_btSendError_awake(uint16_t error_code);
-void awake_oled_update(bool oled_is_enable);
-void main_cycle_done_awake();
-void capture_done_awake();
-void queue_btRxCommand_put(uint16_t * p);
+/*引用自 freertos.c*/
+extern void awake_bt_task();
+extern void put_queue_btSendData(float data1, float data2);
+extern void put_queue_btSendError_awake(uint16_t error_code);
+extern void awake_oled_update(bool oled_is_enable);
+extern void main_cycle_done_awake();
+extern void capture_done_awake();
+extern void queue_btRxCommand_put(uint16_t * p);
 
 /* USER CODE END EFP */
 

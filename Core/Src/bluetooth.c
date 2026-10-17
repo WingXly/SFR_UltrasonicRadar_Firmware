@@ -7,136 +7,13 @@
  * license MIT
  */
 
+#include "bluetooth.h"
 #include "main.h"
 #include "flags.h"
+#include <stdbool.h>
+#include <stdint.h>
 
-
-/*解析来自蓝牙的命令*/
-void cmd_handler(Usart * from)
-{
-    uint8_t len = Usart_Get_RxSize(from);
-    uint8_t * cmd = Usart_GetpReceiveData(from);
-
-    if (len < 4) return;
-    if (cmd[0] != FRAME_HEADER_1 || cmd[1] != FRAME_HEADER_2) return;
-
-    uint8_t n = cmd[2];
-
-    // len =?= 帧总长度 = 2帧头 + n字节 + 1校验 + 1帧尾
-    uint16_t total_len = (uint16_t)n + 4U;
-    if (len < total_len) return;
-    if (cmd[total_len - 1] != FRAME_END) return;
-
-    // 校验范围：cmd[2] 开始的n字节
-    uint8_t checksum = 0;
-    for (uint8_t i = 0; i < n; i++) checksum ^= cmd[2 + i];
-    if (checksum != cmd[2 + n]) return;
-
-    // 检验通过
-    uint16_t cmd_type = (cmd[3] << 8) + cmd[4];
-    uint16_t para1 = (cmd[5] << 8) + cmd[6];
-    queue_btRxCommand_put(&cmd_type);
-    queue_btRxCommand_put(&para1);
-    if (n == 7) {
-        uint16_t para2 = (cmd[7] << 8) + cmd[8];
-        queue_btRxCommand_put(&para2);
-    }
-    static uint16_t end_flag = DEFAULT_CMD_CODE; // DEFAULT_CMD_CODE表示一个命令的结束
-    queue_btRxCommand_put(&end_flag);
-}
-
-
-/*执行来自蓝牙的单参数命令（需要先解析）*/
-void cmd_executor_1para(uint16_t cmd_type, uint16_t para)
-{
-    if (cmd_type == 0)      // 设置机器是否暂停
-    {
-        if (para == 0)      // 解除暂停
-        {
-            pause = false;
-            LED_on(led_green);
-            LED_off(led_red);
-        }
-        else if (para == 1) // 暂停
-        {
-            pause = true;
-            LED_off(led_green);
-            LED_on(led_red);
-        }
-        else
-        {
-            put_queue_btSendError_awake(0x00);
-        }
-    }
-    else if (cmd_type == 1) // 设置OLED屏幕的开或关
-    {
-        if (para == 0)      // 关闭OLED
-        {
-            enable_oled = false;
-            oled_clear_req = true;
-            LED_off(led_blue);
-            
-        }
-        else if (para == 1) // 开启OLED
-        {
-            enable_oled = true;
-            oled_refresh_req = true;
-            LED_on(led_blue);
-        }
-        else
-        {
-            put_queue_btSendError_awake(0x00);
-        }
-    }
-    else if (cmd_type == 4)
-    {
-        resample = para;
-    }
-    else
-    {
-        // 输入的参数个数与指令不匹配
-        put_queue_btSendError_awake(0x01);
-    }
-}
-
-
-/*执行来自蓝牙的双参数命令（需要先解析）*/
-void cmd_executor_2para(uint16_t cmd_type, uint16_t para1, uint16_t para2)
-{
-    if (cmd_type == 2)      // 设置 compare_step。将para一比一转换
-    {
-        AutoCompare_setStep(
-            auto_compare,
-            para1,
-            para2
-        );
-    }
-    else if (cmd_type == 3) // 设置 cooling_time_ms。将para除以1000后转换
-    {
-        float cooling_time_old = cooling_time_ms;
-          
-        if (para1 == 1) {        // set
-            cooling_time_ms = (float)para2 / 1000;
-        } else if (para1 == 2) { // add
-            cooling_time_ms += (float)para2 / 1000;
-        } else if (para1 == 3) { // remove
-            cooling_time_ms -= (float)para2 / 1000;
-        }
-
-        // 不允许冷却时间小于1us
-        if (cooling_time_ms < 0.001) {
-            cooling_time_ms = cooling_time_old;
-            put_queue_btSendError_awake(0x00);
-        }
-    }
-    else
-    {
-        // 输入的参数个数与指令不匹配
-        put_queue_btSendError_awake(0x01);
-    }
-
-}
-
+#define CMD_MAP_SIZE (sizeof(commands_map) / sizeof(commands_map[0]))
 
 /*
 将距离和角度通过串口发送至电脑。采用二进制帧结构发布通知：
@@ -185,4 +62,171 @@ void send_error(Usart * who_send_data, uint16_t error_code)
     sendMsg[8] = FRAME_END;
 
     Usart_Transmit_DMA_noHT(who_send_data, sendMsg, 9);
+}
+
+
+/*解析来自蓝牙的命令*/
+CommandCode_TypeDef * Cmd_Parse(Usart * from)
+{
+    // 初始化返回值
+    static CommandCode_TypeDef cmd = {
+        .type = CMD_DEFAULT,
+        .argc = CMD_DEFAULT,
+    };
+
+    for(uint8_t i = 0; i < CMD_ARG_MAX; i++) {
+        cmd.argv[i] = CMD_DEFAULT;
+    }
+
+    // 检验数据
+    uint8_t len_real = Usart_Get_RxSize(from);
+    uint8_t * receive_data = Usart_GetpReceiveData(from);
+    uint8_t len_tv = receive_data[2];
+    uint8_t len_tv_total = len_tv + 4; // 帧总长度理论值 = 2帧头 + len_tv + 1校验 + 1帧尾
+    uint8_t xor = 0;
+
+    // 校验范围：从 receive_data[2] 开始的 receive_data[2] 字节
+    for (uint8_t i = 2; i < len_tv + 2; i++) {
+        xor ^= receive_data[i];
+    }
+
+    // 检验
+    if (len_real >= 4                             &&
+        len_real == len_tv_total                  &&
+        receive_data[0] == FRAME_HEADER_1         &&
+        receive_data[1] == FRAME_HEADER_2         &&
+        xor == receive_data[2 + len_tv]           &&
+        receive_data[len_tv_total - 1] == FRAME_END)
+    {
+        // 检验通过
+        cmd.type = (receive_data[3] << 8) + receive_data[4];
+
+        uint8_t loop = 0;
+        while(len_tv >= 5 && loop < CMD_ARG_MAX) {
+            cmd.argv[loop] = (receive_data[2 * loop + 5] << 8) + receive_data[2 * loop + 6];
+            cmd.argc += 1;
+            len_tv -= 2;
+            loop += 1;
+        }
+    }
+
+    // 检验不通过，返回默认值
+    return &cmd;
+}
+
+
+/*指令链表*/
+static const struct {
+    uint16_t cmd_type;
+    uint16_t  argc;
+    CommandHandler_TypeDef handler;
+} commands_map[] = {
+    ///={       cmd_type           argc              handler            },
+    { CMD_PAUSE_OR_START       , 1,      __Cmd_PauseOrStart__       },
+    { CMD_OLED                 , 1,      __Cmd_Oled_OnOff__         },
+    { CMD_SPEED                , 2,      __Cmd_Speed__              },
+    { CMD_COOLING_TIME         , 2,      __Cmd_CoolingTime__        },
+    { CMD_RESAMPLE             , 1,      __Cmd_Resample__           },
+};
+
+
+/*
+ * 对比CommandCode和commands_map[]。
+ * 如果找到了匹配的cmd_type且argc匹配，就执行它
+ * 如果没找到命令或者argc不匹配，返回false
+ */
+bool Cmd_Execute(const CommandCode_TypeDef * cmd)
+{
+    for (uint16_t i = 0; i < CMD_MAP_SIZE; i++) {
+        if (commands_map[i].cmd_type == cmd->type)
+        {
+            //  检查参数个数
+            if (commands_map[i].argc != cmd->argc) {
+                put_queue_btSendError_awake(ERR_ARG_COUNT);
+                return false;
+            }
+
+            // 已找到命令，且参数个数正确
+            return commands_map[i].handler(cmd);
+        }
+    }
+
+    // 未知命令
+    put_queue_btSendError_awake(ERR_UNKNOWN_CMD);
+    return false;    
+}
+
+
+static bool __Cmd_PauseOrStart__(const CommandCode_TypeDef * cmd)
+{
+    if (cmd->argv[0] == 0) {
+        pause = false;
+        LED_on(led_green);
+        LED_off(led_red);
+    } else if (cmd->argv[0] == 1) {
+        pause = true;
+        LED_off(led_green);
+        LED_on(led_red);
+    } else {
+        put_queue_btSendError_awake(ERR_INVALID_PARAM);
+        return false;
+    }
+    return true;
+}
+
+
+static bool __Cmd_Oled_OnOff__(const CommandCode_TypeDef * cmd)
+{
+    if (cmd->argv[0] == 0) {
+        enable_oled = false;
+        oled_clear_req = true;
+        LED_off(led_blue);
+    } else if (cmd->argv[0] == 1) {
+        enable_oled = true;
+        oled_refresh_req = true;
+        LED_on(led_blue);
+    } else {
+        put_queue_btSendError_awake(ERR_INVALID_PARAM);
+        return false;
+    }
+    return true;
+}
+
+
+static bool __Cmd_Speed__(const CommandCode_TypeDef * cmd)
+{
+    if ( AutoCompare_setStep(auto_compare, cmd->argv[0], cmd->argv[1]) ) return true;
+    return false;
+}
+
+
+static bool __Cmd_CoolingTime__(const CommandCode_TypeDef * cmd)
+{
+    float cooling_time_old = cooling_time_ms;
+
+    if (cmd->argv[0] == 1) {
+        cooling_time_ms = (float)cmd->argv[1] / 1000;
+    } else if (cmd->argv[0] == 2) {
+        cooling_time_ms += (float)cmd->argv[1] / 1000;
+    } else if (cmd->argv[0] == 3) {
+        cooling_time_ms -= (float)cmd->argv[1] / 1000;
+    } else {
+        put_queue_btSendError_awake(ERR_INVALID_PARAM);
+        return false;
+    }
+
+    if (cooling_time_ms < 0.001f) {
+        cooling_time_ms = cooling_time_old;
+        put_queue_btSendError_awake(ERR_INVALID_PARAM);
+        return false;
+    }
+    return true;
+}
+
+
+static bool __Cmd_Resample__(const CommandCode_TypeDef *cmd)
+{
+    if (cmd->argc < 1) return false;
+    resample = cmd->argv[0];
+    return true;
 }

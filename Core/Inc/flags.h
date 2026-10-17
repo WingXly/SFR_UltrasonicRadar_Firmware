@@ -35,9 +35,6 @@
 // PWM舵机的角度范围
 #define PWMSERVO_ANGLE_RANGE 180.0f
 
-// 默认指令数字，也可以作为指令结束标志
-#define DEFAULT_CMD_CODE 65535
-
 /*全局标识符，采用extern防止暂定定义*/
 
 extern bool pause;

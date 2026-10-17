@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "FreeRTOS.h"
 #include "cmsis_os.h"
 #include "dma.h"
 #include "i2c.h"
@@ -108,7 +109,7 @@ int AutoCompare_next(AutoCompare_TypeDef * this)
 
 
 /*设置compare步进值（operation_type: set, add, remove）（不允许step为负数）*/
-void AutoCompare_setStep( AutoCompare_TypeDef * this,
+bool AutoCompare_setStep( AutoCompare_TypeDef * this,
                           int operation_type, int value )
 {
   int step_old = this->step;
@@ -124,7 +125,9 @@ void AutoCompare_setStep( AutoCompare_TypeDef * this,
   if (this->step < 0) {
     this->step = step_old;
     put_queue_btSendError_awake(0x00);
+    return false;
   } 
+  return true;
 }
 
 // 实例化AutoCompare
