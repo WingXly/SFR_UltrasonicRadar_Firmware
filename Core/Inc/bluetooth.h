@@ -35,7 +35,7 @@ typedef struct {
     uint16_t argv[CMD_ARG_MAX]; // 参数列表
 } CommandCode_TypeDef;
 
-CommandCode_TypeDef * Cmd_Parse(uint8_t * pReceiveData, uint8_t rx_size);
+bool Cmd_Parse(uint8_t * pReceiveData, uint8_t rx_size, CommandCode_TypeDef * pCMD);
 bool Cmd_Execute(const CommandCode_TypeDef * cmd);
 
 static bool __Cmd_PauseOrStart__(const CommandCode_TypeDef * cmd);

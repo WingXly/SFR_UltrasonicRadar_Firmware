@@ -66,16 +66,13 @@ void send_error(Usart * who_send_data, uint16_t error_code)
 
 
 /*解析来自蓝牙的命令*/
-CommandCode_TypeDef * Cmd_Parse(uint8_t * pReceiveData, uint8_t rx_size)
+bool Cmd_Parse(uint8_t * pReceiveData, uint8_t rx_size, CommandCode_TypeDef * pCMD)
 {
     // 初始化返回值
-    static CommandCode_TypeDef cmd = {
-        .type = CMD_DEFAULT,
-        .argc = CMD_DEFAULT,
-    };
-
+    pCMD->type = CMD_DEFAULT,
+    pCMD->argc = 0;
     for(uint8_t i = 0; i < CMD_ARG_MAX; i++) {
-        cmd.argv[i] = CMD_DEFAULT;
+        pCMD->argv[i] = CMD_DEFAULT;
     }
 
     // 检验数据
@@ -97,21 +94,23 @@ CommandCode_TypeDef * Cmd_Parse(uint8_t * pReceiveData, uint8_t rx_size)
         pReceiveData[len_total - 1] == FRAME_END)
     {
         // 检验通过
-        cmd.type = (pReceiveData[3] << 8) + pReceiveData[4];
+        pCMD->type = (pReceiveData[3] << 8) + pReceiveData[4];
 
         // 逐个提取参数
         for(uint8_t loop = 0;
             len > 4 && loop < CMD_ARG_MAX;
             loop++)
         {
-            cmd.argv[loop] = (pReceiveData[2 * loop + 5] << 8) + pReceiveData[2 * loop + 6];
-            cmd.argc += 1;
+            pCMD->argv[loop] = (pReceiveData[2 * loop + 5] << 8) + pReceiveData[2 * loop + 6];
+            pCMD->argc += 1;
             len -= 2;
         }
+
+        return true;
     }
 
     // 检验不通过，返回默认值
-    return &cmd;
+    return false;
 }
 
 

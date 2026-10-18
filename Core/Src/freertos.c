@@ -19,6 +19,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
+#include "bluetooth.h"
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
@@ -200,7 +201,7 @@ void MX_FREERTOS_Init(void) {
   queue_btSendData_Handle = osMessageQueueNew (8, sizeof(float), &queue_btSendData__attributes);
 
   /* creation of queue_btRxCommand_ */
-  queue_btRxCommand_Handle = osMessageQueueNew (16, sizeof(CommandCode_TypeDef*), &queue_btRxCommand__attributes);
+  queue_btRxCommand_Handle = osMessageQueueNew (16, sizeof(CommandCode_TypeDef), &queue_btRxCommand__attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -290,7 +291,7 @@ void StartTask_OledUpdate(void *argument)
 void StartTask_BluetoothIO(void *argument)
 {
   /* USER CODE BEGIN StartTask_BluetoothIO */
-  static CommandCode_TypeDef * rx_cmd = NULL;
+  CommandCode_TypeDef rx_cmd;
   /* Infinite loop */
   for(;;)
   {
@@ -301,11 +302,17 @@ void StartTask_BluetoothIO(void *argument)
     if (Usart_is_RxCplt(bluetooth))
     {
       // 接收指令
-      rx_cmd = Cmd_Parse(
+      bool rx_success = Cmd_Parse(
         Usart_Get_pReceiveData(bluetooth),
-        Usart_Get_RxSize(bluetooth)
+        Usart_Get_RxSize(bluetooth),
+        &rx_cmd
       );
-      osMessageQueuePut(queue_btRxCommand_Handle, &rx_cmd, 0, 0);
+
+      if (rx_success) {
+        osMessageQueuePut(queue_btRxCommand_Handle, &rx_cmd, 0, 0);
+      } else {
+        send_error(bluetooth, CMD_ERR_UNKNOWN_CMD);
+      }
 
       // 等待下一个命令
       Usart_ReceiveToIdle_DMA_noHT(bluetooth);
@@ -386,10 +393,10 @@ State_TypeDef State_Init(void)
 State_TypeDef State_Pause_append(void)
 {
   // 从队列中获取命令，然后执行它们
-  static CommandCode_TypeDef * cmd = NULL;
-  while (osMessageQueueGetCount(queue_btRxCommand_Handle) > 0) {
-    osMessageQueueGet(queue_btRxCommand_Handle, &cmd, 0, 0);
-    Cmd_Execute(cmd);
+  CommandCode_TypeDef cmd;
+  while (osMessageQueueGet(queue_btRxCommand_Handle, &cmd, 0, 0) == osOK)
+  {
+    Cmd_Execute(&cmd);
   }
   // 按按钮（KEY1）暂停或解除暂停的事件放在main.c的HAL_GPIO_EXTI_Callback()里
   // 如果不处于暂停，则进行下一步
@@ -460,3 +467,4 @@ State_TypeDef State_Cooling(void)
 
 
 /* USER CODE END Application */
+

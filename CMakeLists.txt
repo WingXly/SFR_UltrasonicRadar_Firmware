@@ -1,12 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
 
-#
-# This file is generated only once,
-# and is not re-generated if converter is called multiple times.
-#
-# User is free to modify the file as much as necessary
-#
-
 # Setup compiler settings
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -32,9 +25,7 @@ message("Build type: " ${CMAKE_BUILD_TYPE})
 enable_language(C ASM)
 
 # Create an executable object type
-add_executable(${CMAKE_PROJECT_NAME}
-    Core/Src/state_t.c
-    Core/Inc/state_t.h)
+add_executable(${CMAKE_PROJECT_NAME})
 
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)
@@ -42,26 +33,17 @@ add_subdirectory(cmake/stm32cubemx)
 # Link directories setup
 target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined library search paths
-    Core/Inc/
 )
 
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
-    Core/Inc/font.h
     Core/Src/font.c
-    Core/Inc/oled.h
     Core/Src/oled.c
     Core/Src/led.c
-    Core/Inc/led.h
     Core/Src/timer_ep.c
-    Core/Inc/timer_ep.h
     Core/Src/bluetooth.c
-    Core/Inc/bluetooth.h
     Core/Src/usart_ep.c
-    Core/Inc/usart_ep.h
-    Core/Inc/flags.h
     Core/Src/flags.c
-    Core/Inc/state_t.h
     Core/Src/state_t.c
     # Add user sources here
 )
@@ -69,6 +51,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
+    Core/Inc/
 )
 
 # Add project symbols (macros)
@@ -89,5 +72,3 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
 	-u _printf_float
 )
-
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
